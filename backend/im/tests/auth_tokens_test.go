@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"yqx-team/backend/im/auth"
+	"yqx-team/backend/im/common/auth"
 	"yqx-team/backend/im/model"
 )
 
@@ -28,12 +28,12 @@ func testTokens(t *testing.T) (*auth.Tokens, *atomic.Int64, []byte) {
 
 func TestJWTStrictValidation(t *testing.T) {
 	tokens, clock, key := testTokens(t)
-	raw, expires, err := tokens.Issue(model.MaxID)
+	raw, expires, err := tokens.Issue(testID(9999))
 	if err != nil {
 		t.Fatal(err)
 	}
 	id, err := tokens.Verify(raw)
-	if err != nil || id != model.MaxID {
+	if err != nil || id != testID(9999) {
 		t.Fatal("valid safe subject rejected")
 	}
 	equalValue(t, expires.Unix(), clock.Load()+int64(auth.Lifetime.Seconds()))
@@ -57,7 +57,7 @@ func TestJWTStrictValidation(t *testing.T) {
 		"inverted_times":    func(c jwt.MapClaims) { c["iat"] = clock.Load() - 1; c["exp"] = clock.Load() - 2 },
 	} {
 		t.Run(name, func(t *testing.T) {
-			claims := jwt.MapClaims{"sub": "1", "iat": clock.Load(), "exp": clock.Load() + 3600, "iss": "test-im", "aud": "test-api"}
+			claims := jwt.MapClaims{"sub": testID(1), "iat": clock.Load(), "exp": clock.Load() + 3600, "iss": "test-im", "aud": "test-api"}
 			change(claims)
 			raw, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
 			if err != nil {
@@ -69,7 +69,7 @@ func TestJWTStrictValidation(t *testing.T) {
 		})
 	}
 	t.Run("algorithm_and_signature", func(t *testing.T) {
-		claims := jwt.MapClaims{"sub": "1", "iat": clock.Load(), "exp": clock.Load() + 3600, "iss": "test-im", "aud": "test-api"}
+		claims := jwt.MapClaims{"sub": testID(1), "iat": clock.Load(), "exp": clock.Load() + 3600, "iss": "test-im", "aud": "test-api"}
 		for _, method := range []jwt.SigningMethod{jwt.SigningMethodHS384, jwt.SigningMethodNone} {
 			var signingKey any = key
 			if method == jwt.SigningMethodNone {
@@ -94,7 +94,7 @@ func TestJWTStrictValidation(t *testing.T) {
 
 func TestJWTRollingSevenDaysAndConcurrentIsolation(t *testing.T) {
 	tokens, clock, _ := testTokens(t)
-	old, oldExpiry, err := tokens.Issue(1)
+	old, oldExpiry, err := tokens.Issue(testID(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestJWTRollingSevenDaysAndConcurrentIsolation(t *testing.T) {
 	if _, err := tokens.Verify(old); err != nil {
 		t.Fatal(err)
 	}
-	renewed, expires, err := tokens.Issue(1)
+	renewed, expires, err := tokens.Issue(testID(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,13 +121,13 @@ func TestJWTRollingSevenDaysAndConcurrentIsolation(t *testing.T) {
 	seen := sync.Map{}
 	for id := int64(1); id <= 64; id++ {
 		workers.Go(func() {
-			raw, _, err := tokens.Issue(id)
+			raw, _, err := tokens.Issue(testID(id))
 			if err != nil {
 				t.Error(err)
 				return
 			}
 			subject, err := tokens.Verify(raw)
-			if err != nil || subject != id {
+			if err != nil || subject != testID(id) {
 				t.Error("concurrent identity mixed")
 			}
 			if _, loaded := seen.LoadOrStore(raw, true); loaded {
@@ -136,7 +136,7 @@ func TestJWTRollingSevenDaysAndConcurrentIsolation(t *testing.T) {
 		})
 	}
 	workers.Wait()
-	serialized, _ := json.Marshal(model.ParticipantAccount{ParticipantID: 1, Username: "private", Password: "private", CreatedAt: 1})
+	serialized, _ := json.Marshal(model.ParticipantAccount{ParticipantID: testID(1), Username: "private", Password: "private", CreatedAt: 1})
 	equalValue(t, string(serialized), "{}")
 	if _, err := auth.NewTokens([]byte("short"), "issuer", "aud", nil); err == nil {
 		t.Fatal("weak key accepted")

@@ -17,7 +17,7 @@ func (s *Service) ListParticipants(ctx context.Context, caller model.RequestCont
 		if err != nil {
 			return nil, err
 		}
-		ids := []int64{ownerID}
+		ids := []string{ownerID}
 		for _, account := range accounts {
 			ids = append(ids, account.ParticipantID)
 		}

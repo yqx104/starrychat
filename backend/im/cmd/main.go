@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"yqx-team/backend/im/auth"
+	"yqx-team/backend/im/common/auth"
 	"yqx-team/backend/im/config"
 	"yqx-team/backend/im/handler"
 	"yqx-team/backend/im/repository"
@@ -94,7 +94,7 @@ func run(ctx context.Context, path string, bind bool) error {
 
 func bindHuman(ctx context.Context, s *service.Service) error {
 	var input struct {
-		ParticipantID int64  `json:"participant_id"`
+		ParticipantID string `json:"participant_id"`
 		Username      string `json:"username"`
 		Password      string `json:"password"`
 	}
@@ -110,6 +110,6 @@ func bindHuman(ctx context.Context, s *service.Service) error {
 	if err != nil {
 		return errors.New("真人账号绑定失败：检查账号格式、现有真人及是否已经绑定；数据库错误不会输出凭据。")
 	}
-	fmt.Fprintf(os.Stdout, "已为既有真人 participant_id=%d 绑定账号。\n", participant.ParticipantID)
+	fmt.Fprintf(os.Stdout, "已为既有真人 participant_id=%s 绑定账号。\n", participant.ParticipantID)
 	return nil
 }

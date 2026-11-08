@@ -1,3 +1,4 @@
+import { testID } from './ids';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -5,11 +6,11 @@ import { api, ApiError } from '../src/api/client';
 import type { Conversation, Message, MessagePage, Participant } from '../src/api/types';
 import { App } from '../src/app/App';
 
-const human: Participant = { participant_id: 1, kind: 'human', name: '小语', created_at: 1 };
-const other: Participant = { participant_id: 9, kind: 'human', name: '另一账号', created_at: 1 };
-const agent: Participant = { participant_id: 2, kind: 'agent', name: 'Mia', created_at: 1 };
-const chat: Conversation = { conversation_id: 11, kind: 'group', title: '项目组', created_at: 10, dissolved_at: null };
-const message = (id: number, content: string, sender = 1): Message => ({ message_id: id, conversation_id: 11, sender_id: sender, content, created_at: 1700000000000, mentioned_agent_ids: [], quoted_message_id: null });
+const human: Participant = { participant_id: testID(1), kind: 'human', name: '小语', created_at: 1 };
+const other: Participant = { participant_id: testID(9), kind: 'human', name: '另一账号', created_at: 1 };
+const agent: Participant = { participant_id: testID(2), kind: 'agent', name: 'Mia', created_at: 1 };
+const chat: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 10, dissolved_at: null };
+const message = (id: number, content: string, sender = 1): Message => ({ message_seq: id, message_id: testID(id), conversation_id: testID(11), sender_id: testID(sender), content, created_at: 1700000000000, mentioned_agent_ids: [], quoted_message_id: null });
 const expired = new ApiError('登录已过期', 'UNAUTHORIZED', 401);
 function workspace() {
   vi.spyOn(api, 'participants').mockResolvedValue([human, agent]);
@@ -64,7 +65,7 @@ describe('authentication flow', () => {
     vi.spyOn(api, 'login').mockResolvedValue({ participant: human, expires_at: 1800000000000 });
     const user = userEvent.setup(); render(<App />);
     await screen.findByText('旧消息');
-    await user.click(screen.getByRole('button', { name: '引用消息 1' }));
+    await user.click(screen.getByRole('button', { name: `引用消息 ${testID(1)}` }));
     const input = screen.getByRole('textbox', { name: '消息内容' }) as HTMLTextAreaElement;
     await user.type(input, '@Mia'); await user.keyboard('{Enter}'); await user.type(input, '先保留草稿');
     await user.click(screen.getByRole('button', { name: '发送' }));

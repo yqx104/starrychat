@@ -2,9 +2,30 @@ package repository
 
 import (
 	"context"
+	"errors"
 
+	"yqx-team/backend/im/common"
 	"yqx-team/backend/im/model"
 )
+
+// NextMessageSeq runs in the sending transaction, after locking the conversation.
+// The counter and message commit together; a failed send rolls both back.
+func (q *Queries) NextMessageSeq(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, "UPDATE conversations SET last_message_seq=last_message_seq+1 WHERE conversation_id=? AND last_message_seq<?", id, model.MaxSeq)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if rows != 1 {
+		return 0, errors.New("conversation missing or message sequence exhausted")
+	}
+	var seq int64
+	err = q.db.QueryRowContext(ctx, "SELECT last_message_seq FROM conversations WHERE conversation_id=?", id).Scan(&seq)
+	return seq, err
+}
 
 func scanConversation(row scanner) (model.Conversation, error) {
 	var conversation model.Conversation
@@ -12,23 +33,23 @@ func scanConversation(row scanner) (model.Conversation, error) {
 	return conversation, err
 }
 
-func (q *Queries) GetConversation(ctx context.Context, id int64) (model.Conversation, error) {
+func (q *Queries) GetConversation(ctx context.Context, id string) (model.Conversation, error) {
 	return scanConversation(q.db.QueryRowContext(ctx, "SELECT conversation_id, kind, title, created_at, dissolved_at FROM conversations WHERE conversation_id = ?", id))
 }
 
-func (q *Queries) LockConversation(ctx context.Context, id int64) (model.Conversation, error) {
+func (q *Queries) LockConversation(ctx context.Context, id string) (model.Conversation, error) {
 	return scanConversation(q.db.QueryRowContext(ctx, "SELECT conversation_id, kind, title, created_at, dissolved_at FROM conversations WHERE conversation_id = ? FOR UPDATE", id))
 }
 
-func (q *Queries) ListConversationIDs(ctx context.Context, participantID int64) ([]int64, error) {
+func (q *Queries) ListConversationIDs(ctx context.Context, participantID string) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, "SELECT conversation_id FROM conversation_members WHERE participant_id = ? ORDER BY conversation_id", participantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	ids := []int64{}
+	ids := []string{}
 	for rows.Next() {
-		var id int64
+		var id string
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
@@ -38,20 +59,23 @@ func (q *Queries) ListConversationIDs(ctx context.Context, participantID int64) 
 }
 
 func (q *Queries) InsertConversation(ctx context.Context, kind string, title *string, createdAt int64) (model.Conversation, error) {
-	result, err := q.db.ExecContext(ctx, "INSERT INTO conversations (kind, title, created_at) VALUES (?, ?, ?)", kind, title, createdAt)
+	id, err := common.NewID()
 	if err != nil {
 		return model.Conversation{}, err
 	}
-	id, err := insertedID(result)
+	_, err = q.db.ExecContext(ctx, "INSERT INTO conversations (conversation_id, kind, title, created_at) VALUES (?, ?, ?, ?)", id, kind, title, createdAt)
+	if err != nil {
+		return model.Conversation{}, err
+	}
 	return model.Conversation{ConversationID: id, Kind: kind, Title: title, CreatedAt: createdAt}, err
 }
 
-func (q *Queries) SetConversationTitle(ctx context.Context, id int64, title string) error {
+func (q *Queries) SetConversationTitle(ctx context.Context, id string, title string) error {
 	_, err := q.db.ExecContext(ctx, "UPDATE conversations SET title = ? WHERE conversation_id = ?", title, id)
 	return err
 }
 
-func (q *Queries) SetDissolvedAt(ctx context.Context, id, dissolvedAt int64) error {
+func (q *Queries) SetDissolvedAt(ctx context.Context, id string, dissolvedAt int64) error {
 	_, err := q.db.ExecContext(ctx, "UPDATE conversations SET dissolved_at = ? WHERE conversation_id = ?", dissolvedAt, id)
 	return err
 }

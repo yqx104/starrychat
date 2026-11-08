@@ -173,15 +173,15 @@ func testRealEntrypoint(t *testing.T, f *imFixture) {
 	command := exec.CommandContext(ctx, binary, "-config", path, "-bind-human-account")
 	input, _ := json.Marshal(map[string]any{"participant_id": f.human.ParticipantID, "username": "local-owner", "password": testPassword})
 	command.Stdin = bytes.NewReader(input)
-	if output, err := command.CombinedOutput(); err != nil || !strings.Contains(string(output), fmt.Sprintf("participant_id=%d", f.human.ParticipantID)) {
+	if output, err := command.CombinedOutput(); err != nil || !strings.Contains(string(output), fmt.Sprintf("participant_id=%s", f.human.ParticipantID)) {
 		t.Fatalf("local account binding failed: %v", err)
 	}
 	base, stop := launchTestIM(t, binary, path)
 	equalValue(t, testHTTPJSON[handler.ErrorResponse](t, base, "GET", "/participants", nil, "", 401).Error.Code, "UNAUTHORIZED")
 	logged := testHTTPJSON[loginResult](t, base, "POST", "/auth/login", loginBody("local-owner", "bearer"), "", 200)
 	equalValue(t, logged.Participant, f.human)
-	group := testHTTPJSON[handler.ConversationResponse](t, base, "POST", "/conversations", map[string]any{"title": "Real listener", "agent_ids": []int64{}}, logged.Token, 201).Conversation
-	message := testHTTPJSON[handler.MessageResponse](t, base, "POST", fmt.Sprintf("/conversations/%d/messages", group.ConversationID), map[string]any{"content": "Persisted over actual HTTP"}, logged.Token, 201).Message
+	group := testHTTPJSON[handler.ConversationResponse](t, base, "POST", "/conversations", map[string]any{"title": "Real listener", "agent_ids": []string{}}, logged.Token, 201).Conversation
+	message := testHTTPJSON[handler.MessageResponse](t, base, "POST", fmt.Sprintf("/conversations/%s/messages", group.ConversationID), map[string]any{"content": "Persisted over actual HTTP"}, logged.Token, 201).Message
 	stop()
 	base, stop = launchTestIM(t, binary, path)
 	defer stop()
@@ -189,7 +189,7 @@ func testRealEntrypoint(t *testing.T, f *imFixture) {
 		Participant model.Participant `json:"participant"`
 	}](t, base, "GET", "/auth/me", nil, logged.Token, 200)
 	equalValue(t, me.Participant, f.human)
-	page := testHTTPJSON[handler.MessagePage](t, base, "GET", fmt.Sprintf("/conversations/%d/messages", group.ConversationID), nil, logged.Token, 200)
+	page := testHTTPJSON[handler.MessagePage](t, base, "GET", fmt.Sprintf("/conversations/%s/messages", group.ConversationID), nil, logged.Token, 200)
 	equalValue(t, page.Messages, []model.Message{message})
 	equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants"), int64(4))
 	equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts"), int64(4))

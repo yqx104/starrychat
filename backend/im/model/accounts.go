@@ -2,20 +2,20 @@ package model
 
 // Credentials never appear in serialized business responses.
 type ParticipantAccount struct {
-	ParticipantID      int64           `json:"-"`
+	ParticipantID      string          `json:"-"`
 	Kind               ParticipantKind `json:"-"`
-	OwnerParticipantID *int64          `json:"-"`
+	OwnerParticipantID *string         `json:"-"`
 	Username           string          `json:"-"`
 	Password           string          `json:"-"`
 	CreatedAt          int64           `json:"-"`
 }
 
 type AgentAccount struct {
-	ParticipantID      int64           `json:"participant_id"`
+	ParticipantID      string          `json:"participant_id"`
 	Kind               ParticipantKind `json:"kind"`
 	Name               string          `json:"name"`
 	Username           string          `json:"username"`
-	OwnerParticipantID int64           `json:"owner_participant_id"`
+	OwnerParticipantID string          `json:"owner_participant_id"`
 	CreatedAt          int64           `json:"created_at"`
 }
 
@@ -26,7 +26,7 @@ type CreateAgentInput struct {
 }
 
 type UpdateAgentInput struct {
-	ParticipantID int64
+	ParticipantID string
 	Name          *string
 	Username      *string
 	Password      *string `json:"-"`

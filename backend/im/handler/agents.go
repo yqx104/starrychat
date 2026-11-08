@@ -9,7 +9,7 @@ import (
 func (a *API) agents(w http.ResponseWriter, r *http.Request, caller RequestContext) {
 	path := strings.TrimSuffix(r.URL.EscapedPath(), "/")
 	collection := path == "/agents"
-	var id int64
+	var id string
 	if !collection {
 		value, ok := strings.CutPrefix(path, "/agents/")
 		if !ok || strings.Contains(value, "/") {

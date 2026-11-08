@@ -22,13 +22,16 @@ func (s *Service) ListMessages(ctx context.Context, caller model.RequestContext,
 		if query.Limit < 1 || query.Limit > 50 {
 			return model.MessagePage{}, businessError("INVALID_OPERATION", "limit must be between 1 and 50.")
 		}
-		if query.BeforeMessageID != nil && query.AfterMessageID != nil {
+		if query.BeforeSeq != nil && query.AfterSeq != nil {
 			return model.MessagePage{}, businessError("INVALID_OPERATION", "Message cursor directions are mutually exclusive.")
 		}
-		for _, cursor := range []*int64{query.BeforeMessageID, query.AfterMessageID} {
-			if cursor != nil && (*cursor < 1 || *cursor > model.MaxID) {
-				return model.MessagePage{}, businessError("INVALID_OPERATION", "Message cursor must be a positive safe integer.")
+		for _, cursor := range []*int64{query.BeforeSeq, query.AfterSeq} {
+			if cursor != nil && (*cursor < 0 || *cursor > model.MaxSeq) {
+				return model.MessagePage{}, businessError("INVALID_OPERATION", "Message cursor must be a non-negative safe integer.")
 			}
+		}
+		if query.BeforeSeq != nil && *query.BeforeSeq == 0 {
+			return model.MessagePage{}, businessError("INVALID_OPERATION", "before_seq must be positive.")
 		}
 		limit := query.Limit
 		query.Limit++
@@ -40,7 +43,7 @@ func (s *Service) ListMessages(ctx context.Context, caller model.RequestContext,
 		if hasMore {
 			messages = messages[:limit]
 		}
-		if query.AfterMessageID == nil {
+		if query.AfterSeq == nil {
 			slices.Reverse(messages)
 		}
 		return model.MessagePage{Messages: messages, HasMore: hasMore}, nil
@@ -76,14 +79,19 @@ func (s *Service) SendMessage(ctx context.Context, caller model.RequestContext, 
 		if err := quotedMessage(ctx, q, input.ConversationID, input.QuotedMessageID); err != nil {
 			return model.Message{}, err
 		}
+		seq, err := q.NextMessageSeq(ctx, input.ConversationID)
+		if err != nil {
+			return model.Message{}, err
+		}
 		return q.InsertMessage(ctx, model.Message{
+			MessageSeq:     seq,
 			ConversationID: input.ConversationID, SenderID: caller.ParticipantID, Content: input.Content,
 			QuotedMessageID: input.QuotedMessageID, CreatedAt: time.Now().UnixMilli(), MentionedAgentIDs: mentions,
 		})
 	})
 }
 
-func quotedMessage(ctx context.Context, q *repository.Queries, conversationID int64, id *int64) error {
+func quotedMessage(ctx context.Context, q *repository.Queries, conversationID string, id *string) error {
 	if id == nil {
 		return nil
 	}

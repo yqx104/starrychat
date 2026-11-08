@@ -34,14 +34,14 @@ func (h *Handler) sendMessage(in requestInput) (any, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	mentions := []int64{}
+	mentions := []string{}
 	if raw, exists := body["mentioned_agent_ids"]; exists {
 		mentions, err = bodyIDs(raw, "mentioned_agent_ids")
 		if err != nil {
 			return nil, 0, err
 		}
 	}
-	var quotedMessageID *int64
+	var quotedMessageID *string
 	if raw, exists := body["quoted_message_id"]; exists && strings.TrimSpace(string(raw)) != "null" {
 		id, err := bodyID(raw, "quoted_message_id")
 		if err != nil {

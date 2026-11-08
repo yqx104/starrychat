@@ -6,7 +6,7 @@ import (
 	"yqx-team/backend/im/model"
 )
 
-const MaxID = model.MaxID
+const MaxSeq = model.MaxSeq
 const (
 	Human = model.Human
 	Agent = model.Agent
@@ -75,10 +75,10 @@ type Service interface {
 	ListConversations(context.Context, RequestContext) ([]Conversation, error)
 	CreateGroup(context.Context, RequestContext, CreateGroupInput) (Conversation, error)
 	OpenDirect(context.Context, RequestContext, OpenDirectInput) (Conversation, error)
-	GetConversation(context.Context, RequestContext, int64) (Conversation, error)
+	GetConversation(context.Context, RequestContext, string) (Conversation, error)
 	RenameGroup(context.Context, RequestContext, RenameGroupInput) (Conversation, error)
-	DissolveGroup(context.Context, RequestContext, int64) (Conversation, error)
-	ListMembers(context.Context, RequestContext, int64) ([]Participant, error)
+	DissolveGroup(context.Context, RequestContext, string) (Conversation, error)
+	ListMembers(context.Context, RequestContext, string) ([]Participant, error)
 	AddMember(context.Context, RequestContext, AddMemberInput) (Participant, error)
 	RemoveMember(context.Context, RequestContext, RemoveMemberInput) error
 	ListMessages(context.Context, RequestContext, MessagePageQuery) (MessagePage, error)

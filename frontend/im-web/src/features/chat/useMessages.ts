@@ -7,10 +7,10 @@ const POLL_INTERVAL = 10000;
 export function mergeMessages(existing: Message[], incoming: Message[]): Message[] {
   const byId = new Map(existing.map((item) => [item.message_id, item]));
   incoming.forEach((item) => byId.set(item.message_id, item));
-  return [...byId.values()].sort((a, b) => a.message_id - b.message_id);
+  return [...byId.values()].sort((a, b) => a.message_seq - b.message_seq);
 }
 
-export function useMessages(conversationId: number, enabled = true) {
+export function useMessages(conversationId: string, enabled = true) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -49,31 +49,31 @@ export function useMessages(conversationId: number, enabled = true) {
       clearTimeout(timer); busy = true; pollAbort = new AbortController();
       try {
         if (cursor.current === null) {
-          // The API has no after=0. Backfill an initially empty conversation if more than one page arrived.
+          // Backfill an initially empty conversation if more than one page arrived.
           const newest = await api.messages(conversationId, { limit: PAGE_SIZE }, pollAbort.signal);
           if (!alive || pollAbort.signal.aborted) return;
           let collected = newest.messages;
           let more = newest.has_more;
-          let before = collected.length ? Math.min(...collected.map((item) => item.message_id)) : null;
+          let before = collected.length ? Math.min(...collected.map((item) => item.message_seq)) : null;
           while (more) {
             if (before === null) throw new Error('消息分页未返回可继续的位置。');
-            const previous = await api.messages(conversationId, { limit: PAGE_SIZE, before_message_id: before }, pollAbort.signal);
+            const previous = await api.messages(conversationId, { limit: PAGE_SIZE, before_seq: before }, pollAbort.signal);
             if (!alive || pollAbort.signal.aborted) return;
-            const next = previous.messages.length ? Math.min(...previous.messages.map((item) => item.message_id)) : null;
+            const next = previous.messages.length ? Math.min(...previous.messages.map((item) => item.message_seq)) : null;
             if (next === null || next >= before) throw new Error('消息分页未返回可继续的位置。');
             collected = [...previous.messages, ...collected]; before = next; more = previous.has_more;
           }
           if (!alive) return;
           merge(collected);
-          if (collected.length) cursor.current = Math.max(...collected.map((item) => item.message_id));
+          if (collected.length) cursor.current = Math.max(...collected.map((item) => item.message_seq));
           setHasOlder(false);
         } else {
           let more = true;
           while (more) {
             const previousCursor: number = cursor.current;
-            const nextPage = await api.messages(conversationId, { limit: PAGE_SIZE, after_message_id: previousCursor }, pollAbort.signal);
+            const nextPage = await api.messages(conversationId, { limit: PAGE_SIZE, after_seq: previousCursor }, pollAbort.signal);
             if (!alive) return;
-            const next = nextPage.messages.length ? Math.max(...nextPage.messages.map((item) => item.message_id)) : previousCursor;
+            const next = nextPage.messages.length ? Math.max(...nextPage.messages.map((item) => item.message_seq)) : previousCursor;
             if ((nextPage.has_more || nextPage.messages.length) && next <= previousCursor) throw new Error('消息增量未返回可继续的位置。');
             merge(nextPage.messages); cursor.current = next; more = nextPage.has_more; setHasNewer(more);
           }
@@ -99,7 +99,7 @@ export function useMessages(conversationId: number, enabled = true) {
       void api.messages(conversationId, { limit: PAGE_SIZE }, initialAbort.signal).then((result) => {
         if (!alive || initialAbort.signal.aborted) return;
         merge(result.messages); setHasOlder(result.has_more);
-        if (result.messages.length) cursor.current = Math.max(...result.messages.map((item) => item.message_id));
+        if (result.messages.length) cursor.current = Math.max(...result.messages.map((item) => item.message_seq));
         initialized.current = true; setLoading(false); schedule();
       }).catch((error: unknown) => {
         if (!alive || (error instanceof Error && error.name === 'AbortError')) return;
@@ -117,11 +117,11 @@ export function useMessages(conversationId: number, enabled = true) {
     if (!active.current || olderLock.current || !hasOlder || !messagesRef.current.length) return;
     olderLock.current = true; setLoadingOlder(true); setOlderError('');
     const controller = new AbortController(); readAbort.current = controller;
-    const first = messagesRef.current[0].message_id;
+    const first = messagesRef.current[0].message_seq;
     try {
-      const result = await api.messages(conversationId, { limit: PAGE_SIZE, before_message_id: first }, controller.signal);
+      const result = await api.messages(conversationId, { limit: PAGE_SIZE, before_seq: first }, controller.signal);
       if (!active.current || controller.signal.aborted) return;
-      if (result.has_more && (!result.messages.length || Math.min(...result.messages.map((item) => item.message_id)) >= first)) throw new Error('消息分页未返回可继续的位置。');
+      if (result.has_more && (!result.messages.length || Math.min(...result.messages.map((item) => item.message_seq)) >= first)) throw new Error('消息分页未返回可继续的位置。');
       merge(result.messages); setHasOlder(result.has_more);
     } catch (error) {
       if (active.current && !controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError')) setOlderError(errorMessage(error));

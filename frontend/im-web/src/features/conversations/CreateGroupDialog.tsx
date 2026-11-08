@@ -4,9 +4,9 @@ import { Avatar } from '../../components/Avatar';
 import { Modal } from '../../components/Modal';
 import { Notice } from '../../components/Notice';
 
-export function CreateGroupDialog({ agents, onClose, onCreate }: { agents: Participant[]; onClose: () => void; onCreate: (title: string, ids: number[]) => Promise<void> }) {
+export function CreateGroupDialog({ agents, onClose, onCreate }: { agents: Participant[]; onClose: () => void; onCreate: (title: string, ids: string[]) => Promise<void> }) {
   const [title, setTitle] = useState('');
-  const [ids, setIds] = useState<number[]>([]);
+  const [ids, setIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submit = async (event: FormEvent) => {

@@ -10,8 +10,8 @@ import { Sidebar, type Section } from '../features/conversations/Sidebar';
 export function Workspace({ user, active, onLogout }: { user: Participant; active: boolean; onLogout: () => void }) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [membersByConversation, setMembersByConversation] = useState<Record<number, Participant[]>>({});
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [membersByConversation, setMembersByConversation] = useState<Record<string, Participant[]>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [section, setSection] = useState<Section>('chats');
   const [mobileChat, setMobileChat] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -19,7 +19,7 @@ export function Workspace({ user, active, onLogout }: { user: Participant; activ
   const [version, setVersion] = useState(0);
   const [creating, setCreating] = useState(false);
   const [managingAgents, setManagingAgents] = useState(false);
-  const [busyAgent, setBusyAgent] = useState<number | null>(null);
+  const [busyAgent, setBusyAgent] = useState<string | null>(null);
   const [contactError, setContactError] = useState('');
   const initialized = useRef(false);
   useEffect(() => {
@@ -43,8 +43,8 @@ export function Workspace({ user, active, onLogout }: { user: Participant; activ
     const found = current.some((item) => item.conversation_id === conversation.conversation_id);
     return found ? current.map((item) => item.conversation_id === conversation.conversation_id ? conversation : item) : [conversation, ...current];
   }), []);
-  const membersLoaded = useCallback((id: number, members: Participant[]) => setMembersByConversation((current) => ({ ...current, [id]: members })), []);
-  const select = (id: number) => { setSelectedId(id); setSection('chats'); setMobileChat(true); };
+  const membersLoaded = useCallback((id: string, members: Participant[]) => setMembersByConversation((current) => ({ ...current, [id]: members })), []);
+  const select = (id: string) => { setSelectedId(id); setSection('chats'); setMobileChat(true); };
   const openDirect = async (agent: Participant) => {
     if (busyAgent !== null) return;
     setBusyAgent(agent.participant_id); setContactError('');
@@ -52,7 +52,7 @@ export function Workspace({ user, active, onLogout }: { user: Participant; activ
     catch (error) { setContactError(errorMessage(error)); }
     finally { setBusyAgent(null); }
   };
-  const createGroup = async (title: string, ids: number[]) => { const conversation = await api.createGroup(title, ids); upsert(conversation); select(conversation.conversation_id); };
+  const createGroup = async (title: string, ids: string[]) => { const conversation = await api.createGroup(title, ids); upsert(conversation); select(conversation.conversation_id); };
   const selected = conversations.find((conversation) => conversation.conversation_id === selectedId);
   if (loading || loadError) return <div className="connection-screen"><div className="connection-card"><div className="brand-mark">Y<span>·</span></div>{loading ? <><div className="spinner" /><h1>正在连接对话空间</h1><p>正在获取会话与通讯录…</p></> : <><span className="empty-orb"><Icon name="refresh" /></span><h1>暂时无法连接</h1><p>{loadError}</p><button className="button button--primary" onClick={() => setVersion((value) => value + 1)}>重新连接</button></>}</div></div>;
   return <div className={`workspace ${mobileChat ? 'workspace--mobile-chat' : ''}`}>

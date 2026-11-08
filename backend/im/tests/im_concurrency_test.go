@@ -50,6 +50,7 @@ func responseValue[T any](t *testing.T, response *httptest.ResponseRecorder, sta
 }
 
 func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
+	runMessageSequenceTests(t, instance)
 	t.Run("parallel_direct_open_across_independent_pools_reuses_one_chat", func(t *testing.T) {
 		f := newIMFixture(t, instance)
 		otherStore, err := repository.Open(t.Context(), f.dsn)
@@ -73,46 +74,46 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations WHERE kind='direct'"), int64(1))
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversation_members"), int64(2))
 	})
-	t.Run("parallel_add_is_idempotent_and_sends_commit_in_id_order", func(t *testing.T) {
+	t.Run("parallel_add_is_idempotent_and_sends_commit_in_sequence_order", func(t *testing.T) {
 		f := newIMFixture(t, instance)
 		f.group(t, f.alpha)
 		responses := parallelResponses(t, 16, func(ctx context.Context, _ int) *httptest.ResponseRecorder {
-			return f.request(ctx, "POST", "/conversations/1/members", map[string]any{"participant_id": f.beta.ParticipantID}, f.human.ParticipantID)
+			return f.request(ctx, "POST", ("/conversations/" + f.conversationID(1) + "/members"), map[string]any{"participant_id": f.beta.ParticipantID}, f.human.ParticipantID)
 		})
 		for _, response := range responses {
 			equalValue(t, responseValue[handler.MemberResponse](t, response, 200).Member, f.beta)
 		}
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversation_members"), int64(3))
-		seed := f.send(t, 1, "Quote target", f.human)
+		seed := f.send(t, f.conversationID(1), "Quote target", f.human)
 		responses = parallelResponses(t, 32, func(ctx context.Context, i int) *httptest.ResponseRecorder {
 			caller := f.human.ParticipantID
 			if i%2 == 1 {
 				caller = f.alpha.ParticipantID
 			}
-			return f.request(ctx, "POST", "/conversations/1/messages", map[string]any{"content": fmt.Sprintf("Parallel %d", i), "mentioned_agent_ids": []int64{f.beta.ParticipantID, f.alpha.ParticipantID, f.beta.ParticipantID}, "quoted_message_id": seed.MessageID}, caller)
+			return f.request(ctx, "POST", ("/conversations/" + f.conversationID(1) + "/messages"), map[string]any{"content": fmt.Sprintf("Parallel %d", i), "mentioned_agent_ids": []string{f.beta.ParticipantID, f.alpha.ParticipantID, f.beta.ParticipantID}, "quoted_message_id": seed.MessageID}, caller)
 		})
-		byID := map[int64]model.Message{seed.MessageID: seed}
+		byID := map[string]model.Message{seed.MessageID: seed}
 		for _, response := range responses {
 			message := responseValue[handler.MessageResponse](t, response, 201).Message
 			if _, exists := byID[message.MessageID]; exists {
 				t.Fatal("duplicate generated message ID")
 			}
-			equalValue(t, message.MentionedAgentIDs, []int64{f.beta.ParticipantID, f.alpha.ParticipantID})
+			equalValue(t, message.MentionedAgentIDs, []string{f.beta.ParticipantID, f.alpha.ParticipantID})
 			equalValue(t, message.QuotedMessageID, &seed.MessageID)
 			byID[message.MessageID] = message
 		}
-		page := apiJSON[handler.MessagePage](t, f, "/conversations/1/messages")
+		page := apiJSON[handler.MessagePage](t, f, ("/conversations/" + f.conversationID(1) + "/messages"))
 		equalValue(t, len(page.Messages), 33)
 		if page.HasMore {
 			t.Fatal("unexpected extra message page")
 		}
 		var previous int64
 		for _, message := range page.Messages {
-			if message.MessageID <= previous {
+			if message.MessageSeq <= previous {
 				t.Fatal("messages not strictly ascending")
 			}
 			equalValue(t, message, byID[message.MessageID])
-			previous = message.MessageID
+			previous = message.MessageSeq
 		}
 	})
 	t.Run("concurrent_removal_and_sends_keep_membership_consistent", func(t *testing.T) {
@@ -120,9 +121,9 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 		f.group(t, f.alpha)
 		responses := parallelResponses(t, 33, func(ctx context.Context, i int) *httptest.ResponseRecorder {
 			if i == 0 {
-				return f.request(ctx, "DELETE", fmt.Sprintf("/conversations/1/members/%d", f.alpha.ParticipantID), nil, f.human.ParticipantID)
+				return f.request(ctx, "DELETE", fmt.Sprintf(("/conversations/"+f.conversationID(1)+"/members/%s"), f.alpha.ParticipantID), nil, f.human.ParticipantID)
 			}
-			return f.request(ctx, "POST", "/conversations/1/messages", map[string]any{"content": fmt.Sprintf("Before removal %d", i)}, f.alpha.ParticipantID)
+			return f.request(ctx, "POST", ("/conversations/" + f.conversationID(1) + "/messages"), map[string]any{"content": fmt.Sprintf("Before removal %d", i)}, f.alpha.ParticipantID)
 		})
 		responseValue[any](t, responses[0], 204)
 		var saved int64
@@ -136,16 +137,16 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM messages"), saved)
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversation_members WHERE participant_id=?", f.alpha.ParticipantID), int64(0))
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants WHERE participant_id=?", f.alpha.ParticipantID), int64(1))
-		apiJSON[handler.ErrorResponse](t, f, "/conversations/1/messages", apiOptions{method: "POST", caller: f.alpha.ParticipantID, body: map[string]any{"content": "After removal"}, status: 403})
+		apiJSON[handler.ErrorResponse](t, f, ("/conversations/" + f.conversationID(1) + "/messages"), apiOptions{method: "POST", caller: f.alpha.ParticipantID, body: map[string]any{"content": "After removal"}, status: 403})
 	})
 	t.Run("concurrent_dissolution_and_sends_keep_closed_state_consistent", func(t *testing.T) {
 		f := newIMFixture(t, instance)
 		f.group(t, f.alpha)
 		responses := parallelResponses(t, 33, func(ctx context.Context, i int) *httptest.ResponseRecorder {
 			if i == 0 {
-				return f.request(ctx, "POST", "/conversations/1/dissolve", nil, f.human.ParticipantID)
+				return f.request(ctx, "POST", ("/conversations/" + f.conversationID(1) + "/dissolve"), nil, f.human.ParticipantID)
 			}
-			return f.request(ctx, "POST", "/conversations/1/messages", map[string]any{"content": fmt.Sprintf("Before close %d", i)}, f.alpha.ParticipantID)
+			return f.request(ctx, "POST", ("/conversations/" + f.conversationID(1) + "/messages"), map[string]any{"content": fmt.Sprintf("Before close %d", i)}, f.alpha.ParticipantID)
 		})
 		closed := responseValue[handler.ConversationResponse](t, responses[0], 200).Conversation
 		if closed.DissolvedAt == nil {
@@ -160,9 +161,9 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 			equalValue(t, responseValue[handler.ErrorResponse](t, response, 409).Error.Code, "CONFLICT")
 		}
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM messages"), saved)
-		equalValue(t, apiJSON[handler.ConversationResponse](t, f, "/conversations/1/dissolve", apiOptions{method: "POST"}).Conversation, closed)
-		apiJSON[handler.ErrorResponse](t, f, "/conversations/1/messages", apiOptions{method: "POST", body: map[string]any{"content": "After close"}, status: 409})
-		equalValue(t, int64(len(apiJSON[handler.MessagePage](t, f, "/conversations/1/messages").Messages)), saved)
+		equalValue(t, apiJSON[handler.ConversationResponse](t, f, ("/conversations/"+f.conversationID(1)+"/dissolve"), apiOptions{method: "POST"}).Conversation, closed)
+		apiJSON[handler.ErrorResponse](t, f, ("/conversations/" + f.conversationID(1) + "/messages"), apiOptions{method: "POST", body: map[string]any{"content": "After close"}, status: 409})
+		equalValue(t, int64(len(apiJSON[handler.MessagePage](t, f, ("/conversations/"+f.conversationID(1)+"/messages")).Messages)), saved)
 	})
 	t.Run("cancellation_interrupts_a_real_row_lock_wait_and_pool_recovers", func(t *testing.T) {
 		f := newIMFixture(t, instance)
@@ -172,15 +173,15 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 			t.Fatal(err)
 		}
 		defer lock.Rollback()
-		var id int64
-		if err := lock.QueryRowContext(t.Context(), "SELECT conversation_id FROM conversations WHERE conversation_id=1 FOR UPDATE").Scan(&id); err != nil {
+		var id string
+		if err := lock.QueryRowContext(t.Context(), ("SELECT conversation_id FROM conversations WHERE conversation_id='" + f.conversationID(1) + "' FOR UPDATE")).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		done := make(chan *httptest.ResponseRecorder, 1)
 		go func() {
-			done <- f.request(ctx, "POST", "/conversations/1/messages", map[string]any{"content": "Cancelled while locked"}, f.human.ParticipantID)
+			done <- f.request(ctx, "POST", ("/conversations/" + f.conversationID(1) + "/messages"), map[string]any{"content": "Cancelled while locked"}, f.human.ParticipantID)
 		}()
 		deadline := time.Now().Add(5 * time.Second)
 		for f.count(t, `SELECT COUNT(*) FROM performance_schema.data_lock_waits w
@@ -208,7 +209,7 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 			}
 			t.Fatalf("cancelled Open = %v", err)
 		}
-		f.send(t, 1, "After cancellation", f.human)
+		f.send(t, f.conversationID(1), "After cancellation", f.human)
 	})
 	t.Run("configured_entrypoint_starts_real_authenticated_listener", func(t *testing.T) {
 		f := newIMFixture(t, instance)

@@ -1,14 +1,17 @@
 // Temporary in-memory fixture for Agent management and identity switching; never imported by the app.
 import http from 'node:http';
 
+// Canonical UUIDv7-shaped fixture values; these are never production identifiers.
+const fixtureID = (n) => `00000000-0000-7000-8000-${n.toString(16).padStart(12, '0')}`;
+
 const stamp = Date.now();
 const humans = [
-  { participant_id: 1, kind: 'human', name: '示例用户甲', created_at: stamp, username: 'sample.one', password: 'fixture-pass-one' },
-  { participant_id: 2, kind: 'human', name: '示例用户乙', created_at: stamp, username: 'sample.two', password: 'fixture-pass-two' },
+  { participant_id: fixtureID(1), kind: 'human', name: '示例用户甲', created_at: stamp, username: 'sample.one', password: 'fixture-pass-one' },
+  { participant_id: fixtureID(2), kind: 'human', name: '示例用户乙', created_at: stamp, username: 'sample.two', password: 'fixture-pass-two' },
 ];
 let agents = [
-  { participant_id: 11, kind: 'agent', name: '示例助手甲', username: 'sample.agent-a', owner_participant_id: 1, created_at: stamp },
-  { participant_id: 12, kind: 'agent', name: '示例助手乙', username: 'sample.agent-b', owner_participant_id: 2, created_at: stamp },
+  { participant_id: fixtureID(11), kind: 'agent', name: '示例助手甲', username: 'sample.agent-a', owner_participant_id: fixtureID(1), created_at: stamp },
+  { participant_id: fixtureID(12), kind: 'agent', name: '示例助手乙', username: 'sample.agent-b', owner_participant_id: fixtureID(2), created_at: stamp },
 ];
 let nextId = 13;
 const publicHuman = ({ participant_id, kind, name, created_at }) => ({ participant_id, kind, name, created_at });
@@ -33,12 +36,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/conversations' && req.method === 'GET') return reply(res, 200, { conversations: [] });
     if (url.pathname === '/agents' && req.method === 'GET') return reply(res, 200, { agents: agents.filter((agent) => agent.owner_participant_id === human.participant_id) });
     if (url.pathname === '/agents' && req.method === 'POST') {
-      const input = await body(req); const agent = { participant_id: nextId++, kind: 'agent', name: input.name, username: input.username, owner_participant_id: human.participant_id, created_at: Date.now() };
+      const input = await body(req); const agent = { participant_id: fixtureID(nextId++), kind: 'agent', name: input.name, username: input.username, owner_participant_id: human.participant_id, created_at: Date.now() };
       agents = [...agents, agent]; return reply(res, 201, { agent });
     }
-    const match = url.pathname.match(/^\/agents\/(\d+)$/);
+    const match = url.pathname.match(/^\/agents\/([0-9a-f-]{36})$/);
     if (match && req.method === 'PATCH') {
-      const agent = agents.find((item) => item.participant_id === Number(match[1]) && item.owner_participant_id === human.participant_id);
+      const agent = agents.find((item) => item.participant_id === match[1] && item.owner_participant_id === human.participant_id);
       if (!agent) return error(res, 404, '未找到 Agent');
       const input = await body(req); if (input.name !== undefined) agent.name = input.name; if (input.username !== undefined) agent.username = input.username;
       return reply(res, 200, { agent });

@@ -9,7 +9,7 @@ export function MessageList({ currentUser, messages, participants, hasOlder, loa
   currentUser: Participant; messages: Message[]; participants: Participant[]; hasOlder: boolean; loadingOlder: boolean; olderError: string; onOlder: () => Promise<void>; onQuote: (message: Message) => void; canQuote: boolean;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
-  const anchor = useRef<{ id: string; offset: number; firstId: number } | null>(null);
+  const anchor = useRef<{ id: string; offset: number; firstId: string } | null>(null);
   const nearBottom = useRef(true);
   const initial = useRef(true);
   const byId = new Map(messages.map((message) => [message.message_id, message]));

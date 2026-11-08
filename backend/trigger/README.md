@@ -19,7 +19,9 @@
 
 Agent 表先只登记身份。显示名、所属真人、登录账号和密码由 IM 管理；运行器配置在确定投递协议后补充。
 
-`channel_id` 约定由后续 Trigger 订阅接口生成小写 UUID v7，数据库校验其格式与版本。`conversation_id` 是来源系统的会话标识。IM 的数字会话 ID 转为十进制字符串保存；外部平台可直接保存字符串 ID。字段统一拼写为 `conversation_id`。
+两张表的 `agent_id` 均使用 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`，沿用 IM 的标准小写 UUIDv7，并由数据库校验格式。
+
+`channel_id` 约定由后续 Trigger 订阅接口生成小写 UUID v7，数据库校验其格式与版本。`conversation_id` 是来源系统的会话标识。IM 的会话 UUIDv7 直接保存为标准字符串；外部平台可直接保存字符串 ID。字段统一拼写为 `conversation_id`。
 
 `channel_type` 首版约定 `im_direct` 和 `im_group`，使用字符串而不是数据库枚举。`(channel_type, conversation_id)` 标识来源会话；未来一个来源接入多个账号或租户时，需要在接入设计中明确账号命名空间，避免外部会话 ID 冲突。
 

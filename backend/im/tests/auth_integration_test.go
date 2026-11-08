@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"yqx-team/backend/im/auth"
+	"yqx-team/backend/im/common/auth"
 	"yqx-team/backend/im/handler"
 	"yqx-team/backend/im/model"
 	"yqx-team/backend/im/repository"
@@ -239,7 +239,7 @@ func TestMySQLAuthentication(t *testing.T) {
 	t.Run("unauthenticated_dual_and_ambiguous_credentials_rejected", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
 		owner := f.humanLogin(t)
-		for _, path := range []string{"/auth/me", "/participants", "/conversations", "/conversations/1/messages"} {
+		for _, path := range []string{"/auth/me", "/participants", "/conversations", "/conversations/00000000-0000-7000-8000-000000000001/messages"} {
 			w := f.call("GET", path, nil)
 			assertError(t, w, 401, "UNAUTHORIZED")
 			noRenewal(t, w)
@@ -255,7 +255,7 @@ func TestMySQLAuthentication(t *testing.T) {
 			assertError(t, w, 401, "UNAUTHORIZED")
 			noRenewal(t, w)
 		}
-		raw, _, err := f.tokens.Issue(model.MaxID)
+		raw, _, err := f.tokens.Issue(testID(9999))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -276,7 +276,7 @@ func TestMySQLAuthentication(t *testing.T) {
 			assertError(t, w, 403, "FORBIDDEN")
 			noRenewal(t, w)
 		}
-		assertError(t, f.call("POST", "/conversations", map[string]any{"title": "No origin", "agent_ids": []int64{}}, authRequest{cookie: owner.Token}), 403, "FORBIDDEN")
+		assertError(t, f.call("POST", "/conversations", map[string]any{"title": "No origin", "agent_ids": []string{}}, authRequest{cookie: owner.Token}), 403, "FORBIDDEN")
 		w := f.call("POST", "/auth/login", loginBody("owner", "cookie"), authRequest{secure: true, host: "im.example", origin: "https://im.example"})
 		responseValue[loginResult](t, w, 200)
 		if !w.Result().Cookies()[0].Secure {
@@ -374,13 +374,13 @@ func TestMySQLAuthentication(t *testing.T) {
 		owner := f.humanLogin(t)
 		responseValue[map[string]any](t, f.call("POST", "/auth/register", registration("alpha", "agent"), authRequest{bearer: owner.Token}), 201)
 		agent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
-		group := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations", map[string]any{"title": "Authenticated", "agent_ids": []int64{agent.Participant.ParticipantID}}, authRequest{bearer: owner.Token}), 201).Conversation
+		group := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations", map[string]any{"title": "Authenticated", "agent_ids": []string{agent.Participant.ParticipantID}}, authRequest{bearer: owner.Token}), 201).Conversation
 		responses := parallelResponses(t, 32, func(_ context.Context, i int) *httptest.ResponseRecorder {
 			token := owner.Token
 			if i%2 == 1 {
 				token = agent.Token
 			}
-			return f.call("POST", fmt.Sprintf("/conversations/%d/messages", group.ConversationID), map[string]any{"content": fmt.Sprint(i)}, authRequest{bearer: token})
+			return f.call("POST", fmt.Sprintf("/conversations/%s/messages", group.ConversationID), map[string]any{"content": fmt.Sprint(i)}, authRequest{bearer: token})
 		})
 		for i, w := range responses {
 			m := responseValue[handler.MessageResponse](t, w, 201).Message

@@ -1,3 +1,4 @@
+import { testID } from './ids';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -5,19 +6,19 @@ import { api, ApiError } from '../src/api/client';
 import type { AgentAccount, Conversation, Participant } from '../src/api/types';
 import { App } from '../src/app/App';
 
-const human: Participant = { participant_id: 1, kind: 'human', name: '用户', created_at: 1 };
-const agent: AgentAccount = { participant_id: 2, kind: 'agent', name: 'Mia', username: 'mia.test', owner_participant_id: 1, created_at: 2 };
-const newcomer: AgentAccount = { participant_id: 3, kind: 'agent', name: 'Nova', username: 'nova.test', owner_participant_id: 1, created_at: 3 };
+const human: Participant = { participant_id: testID(1), kind: 'human', name: '用户', created_at: 1 };
+const agent: AgentAccount = { participant_id: testID(2), kind: 'agent', name: 'Mia', username: 'mia.test', owner_participant_id: testID(1), created_at: 2 };
+const newcomer: AgentAccount = { participant_id: testID(3), kind: 'agent', name: 'Nova', username: 'nova.test', owner_participant_id: testID(1), created_at: 3 };
 const participant = (value: AgentAccount): Participant => ({ participant_id: value.participant_id, kind: 'agent', name: value.name, created_at: value.created_at });
-const group: Conversation = { conversation_id: 11, kind: 'group', title: '项目组', created_at: 11, dissolved_at: null };
-const direct: Conversation = { conversation_id: 12, kind: 'direct', title: null, created_at: 10, dissolved_at: null };
+const group: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 11, dissolved_at: null };
+const direct: Conversation = { conversation_id: testID(12), kind: 'direct', title: null, created_at: 10, dissolved_at: null };
 function basic() {
   vi.spyOn(api, 'me').mockResolvedValue(human);
   vi.spyOn(api, 'participants').mockResolvedValue([human, participant(agent)]);
   vi.spyOn(api, 'conversations').mockResolvedValue([group, direct]);
   vi.spyOn(api, 'members').mockResolvedValue([human, participant(agent)]);
-  vi.spyOn(api, 'getConversation').mockImplementation(async (id) => id === 11 ? group : direct);
-  vi.spyOn(api, 'messages').mockImplementation(async (id) => ({ messages: [{ message_id: id, conversation_id: id, sender_id: 2, content: '原有消息', created_at: 100, mentioned_agent_ids: [], quoted_message_id: null }], has_more: false }));
+  vi.spyOn(api, 'getConversation').mockImplementation(async (id) => id === testID(11) ? group : direct);
+  vi.spyOn(api, 'messages').mockImplementation(async (id) => ({ messages: [{ message_seq: 1, message_id: id, conversation_id: id, sender_id: testID(2), content: '原有消息', created_at: 100, mentioned_agent_ids: [], quoted_message_id: null }], has_more: false }));
 }
 async function openManager(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: '通讯录' }));
@@ -55,11 +56,11 @@ describe('Agent management', () => {
     const update = vi.spyOn(api, 'updateAgent').mockResolvedValue(renamed);
     const user = userEvent.setup(); render(<App />);
     await screen.findByText('原有消息');
-    await user.click(await screen.findByRole('button', { name: /单聊 #12/ }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(`单聊 #${testID(12)}`) }));
     await waitFor(() => expect(screen.getByRole('button', { name: /Mia.*单聊/ })).toBeTruthy());
     await user.click(screen.getByRole('button', { name: /项目组.*群聊/ }));
     await screen.findByText('原有消息');
-    await user.click(screen.getByRole('button', { name: '引用消息 11' }));
+    await user.click(screen.getByRole('button', { name: `引用消息 ${testID(11)}` }));
     const input = screen.getByRole('textbox', { name: '消息内容' }) as HTMLTextAreaElement;
     await user.type(input, '@Mia'); await user.keyboard('{Enter}'); await user.type(input, '草稿保留');
     const manager = await openManager(user);
@@ -69,7 +70,7 @@ describe('Agent management', () => {
     await user.clear(name); await user.type(name, 'Mia 新名');
     await user.clear(username); await user.type(username, 'mia.new');
     await user.click(within(dialog).getByRole('button', { name: '保存修改' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith(2, { name: 'Mia 新名', username: 'mia.new' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(testID(2), { name: 'Mia 新名', username: 'mia.new' }));
     await user.click(screen.getByRole('button', { name: '关闭' }));
     expect(screen.getByRole('button', { name: /Mia 新名.*点击发起对话/ })).toBeTruthy();
     expect(input.value).toBe('@Mia 草稿保留');
@@ -91,7 +92,7 @@ describe('Agent management', () => {
     let dialog = screen.getByRole('dialog', { name: '编辑 Agent' });
     await user.type(within(dialog).getByLabelText('新密码（可留空）'), 'test-reset-password');
     await user.click(within(dialog).getByRole('button', { name: '保存修改' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith(2, { password: 'test-reset-password' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(testID(2), { password: 'test-reset-password' }));
     await user.click(await screen.findByRole('button', { name: /编辑 Mia/ }));
     dialog = screen.getByRole('dialog', { name: '编辑 Agent' });
     expect((within(dialog).getByLabelText('新密码（可留空）') as HTMLInputElement).value).toBe('');
@@ -125,7 +126,7 @@ describe('Agent management', () => {
   });
   it('filters other owners, shows loading errors and retries without creating accounts', async () => {
     basic();
-    const foreign = { ...newcomer, owner_participant_id: 99, name: '其他人的 Agent' };
+    const foreign = { ...newcomer, owner_participant_id: testID(99), name: '其他人的 Agent' };
     const list = vi.spyOn(api, 'agents').mockRejectedValueOnce(new Error('连接失败')).mockResolvedValueOnce([agent, foreign]);
     const user = userEvent.setup(); render(<App />);
     const manager = await openManager(user);
@@ -137,10 +138,10 @@ describe('Agent management', () => {
   });
   it('aborts and ignores an old owner response during identity changes', async () => {
     basic();
-    const nextHuman: Participant = { participant_id: 10, kind: 'human', name: '另一用户', created_at: 1 };
+    const nextHuman: Participant = { participant_id: testID(10), kind: 'human', name: '另一用户', created_at: 1 };
     let notify!: () => void; let finishOld!: (value: AgentAccount[]) => void; let oldSignal: AbortSignal | undefined;
     vi.spyOn(api, 'onUnauthorized').mockImplementation((listener) => { notify = listener; return () => {}; });
-    vi.spyOn(api, 'agents').mockImplementationOnce((signal) => { oldSignal = signal; return new Promise((resolve) => { finishOld = resolve; }); }).mockResolvedValueOnce([{ ...newcomer, owner_participant_id: 10 }]);
+    vi.spyOn(api, 'agents').mockImplementationOnce((signal) => { oldSignal = signal; return new Promise((resolve) => { finishOld = resolve; }); }).mockResolvedValueOnce([{ ...newcomer, owner_participant_id: testID(10) }]);
     vi.spyOn(api, 'login').mockResolvedValue({ participant: nextHuman, expires_at: 1800000000000 });
     vi.mocked(api.participants).mockResolvedValueOnce([human, participant(agent)]).mockResolvedValueOnce([nextHuman, participant(newcomer)]);
     const user = userEvent.setup(); render(<App />);
@@ -156,7 +157,7 @@ describe('Agent management', () => {
   });
   it('does not apply a pending creation after the signed-in identity changes', async () => {
     basic();
-    const nextHuman: Participant = { participant_id: 10, kind: 'human', name: '另一用户', created_at: 1 };
+    const nextHuman: Participant = { participant_id: testID(10), kind: 'human', name: '另一用户', created_at: 1 };
     let notify!: () => void; let finishCreate!: (value: AgentAccount) => void;
     vi.spyOn(api, 'onUnauthorized').mockImplementation((listener) => { notify = listener; return () => {}; });
     vi.spyOn(api, 'agents').mockResolvedValue([agent]);

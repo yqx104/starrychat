@@ -107,7 +107,7 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 		if err != nil {
 			return conversation, err
 		}
-		for _, id := range []int64{human.ParticipantID, agent.ParticipantID} {
+		for _, id := range []string{human.ParticipantID, agent.ParticipantID} {
 			if err := q.InsertMember(ctx, conversation.ConversationID, id, now); err != nil {
 				return conversation, err
 			}
@@ -116,7 +116,7 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 	})
 }
 
-func (s *Service) GetConversation(ctx context.Context, caller model.RequestContext, id int64) (model.Conversation, error) {
+func (s *Service) GetConversation(ctx context.Context, caller model.RequestContext, id string) (model.Conversation, error) {
 	return read(ctx, s, func(q *repository.Queries) (model.Conversation, error) {
 		return accessibleConversation(ctx, q, caller, id, false)
 	})
@@ -136,7 +136,7 @@ func (s *Service) RenameGroup(ctx context.Context, caller model.RequestContext, 
 	})
 }
 
-func (s *Service) DissolveGroup(ctx context.Context, caller model.RequestContext, id int64) (model.Conversation, error) {
+func (s *Service) DissolveGroup(ctx context.Context, caller model.RequestContext, id string) (model.Conversation, error) {
 	return write(ctx, s, func(q *repository.Queries) (model.Conversation, error) {
 		conversation, err := accessibleConversation(ctx, q, caller, id, true)
 		if err != nil {

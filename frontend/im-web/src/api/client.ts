@@ -13,8 +13,9 @@ function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();
   return value as Record<string, unknown>;
 }
-function id(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) return invalid();
+const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+function id(value: unknown): string {
+  if (typeof value !== 'string' || !uuidV7.test(value)) return invalid();
   return value;
 }
 function timestamp(value: unknown): number {
@@ -43,15 +44,22 @@ function conversation(value: unknown): Conversation {
 }
 function message(value: unknown): Message {
   const m = object(value);
-  return { message_id: id(m.message_id), conversation_id: id(m.conversation_id), sender_id: id(m.sender_id), content: string(m.content), created_at: timestamp(m.created_at), mentioned_agent_ids: array(m.mentioned_agent_ids, id), quoted_message_id: m.quoted_message_id === null ? null : id(m.quoted_message_id) };
+  return { message_seq: sequence(m.message_seq), message_id: id(m.message_id), conversation_id: id(m.conversation_id), sender_id: id(m.sender_id), content: string(m.content), created_at: timestamp(m.created_at), mentioned_agent_ids: array(m.mentioned_agent_ids, id), quoted_message_id: m.quoted_message_id === null ? null : id(m.quoted_message_id) };
 }
 function page(value: unknown): MessagePage {
   const p = object(value);
   if (typeof p.has_more !== 'boolean') return invalid();
   return { messages: array(p.messages, message), has_more: p.has_more };
 }
-function validId(value: number): void {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new ApiError('ID 必须是正的安全整数。', 'INVALID_REQUEST');
+function validId(value: string): void {
+  if (typeof value !== 'string' || !uuidV7.test(value)) throw new ApiError('ID 必须是标准 UUIDv7 字符串。', 'INVALID_REQUEST');
+}
+function sequence(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) return invalid();
+  return value;
+}
+function validSeq(value: number, allowZero = false): void {
+  if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) throw new ApiError('消息序号超出有效范围。', 'INVALID_REQUEST');
 }
 
 export class ImApi {
@@ -154,7 +162,7 @@ export class ImApi {
     const { name, username, password } = input;
     return agentAccount(object(await this.request('/agents', { method: 'POST', body: { name, username, password } })).agent);
   }
-  async updateAgent(participantId: number, input: UpdateAgentInput): Promise<AgentAccount> {
+  async updateAgent(participantId: string, input: UpdateAgentInput): Promise<AgentAccount> {
     validId(participantId);
     const body = { ...(input.name === undefined ? {} : { name: input.name }), ...(input.username === undefined ? {} : { username: input.username }), ...(input.password === undefined ? {} : { password: input.password }) };
     if (!Object.keys(body).length) throw new ApiError('请选择要修改的资料。', 'INVALID_REQUEST');
@@ -169,52 +177,53 @@ export class ImApi {
   async conversations(signal?: AbortSignal): Promise<Conversation[]> {
     return array(object(await this.request('/conversations', { signal })).conversations, conversation);
   }
-  async getConversation(conversationId: number, signal?: AbortSignal): Promise<Conversation> {
+  async getConversation(conversationId: string, signal?: AbortSignal): Promise<Conversation> {
     validId(conversationId);
     return conversation(object(await this.request(`/conversations/${conversationId}`, { signal })).conversation);
   }
-  async createGroup(title: string, agentIds: number[]): Promise<Conversation> {
+  async createGroup(title: string, agentIds: string[]): Promise<Conversation> {
     agentIds.forEach(validId);
     return conversation(object(await this.request('/conversations', { method: 'POST', body: { title, agent_ids: agentIds } })).conversation);
   }
-  async openDirect(agentId: number): Promise<Conversation> {
+  async openDirect(agentId: string): Promise<Conversation> {
     validId(agentId);
     return conversation(object(await this.request('/conversations/direct', { method: 'POST', body: { agent_id: agentId } })).conversation);
   }
-  async rename(conversationId: number, title: string): Promise<Conversation> {
+  async rename(conversationId: string, title: string): Promise<Conversation> {
     validId(conversationId);
     return conversation(object(await this.request(`/conversations/${conversationId}`, { method: 'PATCH', body: { title } })).conversation);
   }
-  async dissolve(conversationId: number): Promise<Conversation> {
+  async dissolve(conversationId: string): Promise<Conversation> {
     validId(conversationId);
     return conversation(object(await this.request(`/conversations/${conversationId}/dissolve`, { method: 'POST', body: {} })).conversation);
   }
-  async members(conversationId: number, signal?: AbortSignal): Promise<Participant[]> {
+  async members(conversationId: string, signal?: AbortSignal): Promise<Participant[]> {
     validId(conversationId);
     return array(object(await this.request(`/conversations/${conversationId}/members`, { signal })).members, participant);
   }
-  async addMember(conversationId: number, participantId: number): Promise<Participant> {
+  async addMember(conversationId: string, participantId: string): Promise<Participant> {
     validId(conversationId); validId(participantId);
     return participant(object(await this.request(`/conversations/${conversationId}/members`, { method: 'POST', body: { participant_id: participantId } })).member);
   }
-  async removeMember(conversationId: number, participantId: number): Promise<void> {
+  async removeMember(conversationId: string, participantId: string): Promise<void> {
     validId(conversationId); validId(participantId);
     await this.request(`/conversations/${conversationId}/members/${participantId}`, { method: 'DELETE' });
   }
-  async messages(conversationId: number, query: MessageQuery = {}, signal?: AbortSignal): Promise<MessagePage> {
+  async messages(conversationId: string, query: MessageQuery = {}, signal?: AbortSignal): Promise<MessagePage> {
     validId(conversationId);
-    if (query.before_message_id !== undefined && query.after_message_id !== undefined) throw new ApiError('不能同时指定两个分页方向。', 'INVALID_REQUEST');
+    if (query.before_seq !== undefined && query.after_seq !== undefined) throw new ApiError('不能同时指定两个分页方向。', 'INVALID_REQUEST');
     if (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 50)) throw new ApiError('消息数量必须在 1 到 50 之间。', 'INVALID_REQUEST');
-    if (query.before_message_id !== undefined) validId(query.before_message_id);
-    if (query.after_message_id !== undefined) validId(query.after_message_id);
+    if (query.before_seq !== undefined) validSeq(query.before_seq);
+    if (query.after_seq !== undefined) validSeq(query.after_seq, true);
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value));
     const result = page(await this.request(`/conversations/${conversationId}/messages${params.size ? `?${params}` : ''}`, { signal }));
     if (result.has_more && !result.messages.length) return invalid();
-    if (result.messages.some((item, index) => item.conversation_id !== conversationId || (index > 0 && item.message_id <= result.messages[index - 1].message_id) || (query.before_message_id !== undefined && item.message_id >= query.before_message_id) || (query.after_message_id !== undefined && item.message_id <= query.after_message_id))) return invalid();
+    if (new Set(result.messages.map((item) => item.message_id)).size !== result.messages.length) return invalid();
+    if (result.messages.some((item, index) => item.conversation_id !== conversationId || (index > 0 && item.message_seq <= result.messages[index - 1].message_seq) || (query.before_seq !== undefined && item.message_seq >= query.before_seq) || (query.after_seq !== undefined && item.message_seq <= query.after_seq))) return invalid();
     return result;
   }
-  async send(conversationId: number, input: SendMessageInput): Promise<Message> {
+  async send(conversationId: string, input: SendMessageInput): Promise<Message> {
     validId(conversationId); input.mentioned_agent_ids?.forEach(validId);
     if (input.quoted_message_id !== undefined) validId(input.quoted_message_id);
     const result = message(object(await this.request(`/conversations/${conversationId}/messages`, { method: 'POST', body: input })).message);

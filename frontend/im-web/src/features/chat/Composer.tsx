@@ -6,7 +6,7 @@ import { Notice } from '../../components/Notice';
 import { applyInput, mentionQuery, replaceDraft, type Draft, type MentionQuery, type Selection } from './mentions';
 
 export function Composer({ conversationId, members, participants, quote, setQuote, onSent, disabled }: {
-  conversationId: number; group: boolean; members: Participant[]; participants: Participant[]; quote: Message | null; setQuote: (message: Message | null) => void; onSent: (message: Message) => void; disabled: boolean;
+  conversationId: string; group: boolean; members: Participant[]; participants: Participant[]; quote: Message | null; setQuote: (message: Message | null) => void; onSent: (message: Message) => void; disabled: boolean;
 }) {
   const [draft, setDraft] = useState<Draft>({ text: '', mentions: [] });
   const draftRef = useRef(draft);

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
+	"yqx-team/backend/im/common"
 	"yqx-team/backend/im/model"
 	"yqx-team/backend/im/repository"
 )
@@ -40,7 +41,7 @@ func businessError(code, message string) error {
 }
 
 func requireCaller(ctx context.Context, q *repository.Queries, caller model.RequestContext, lock bool) (model.Participant, error) {
-	if caller.ParticipantID < 1 || caller.ParticipantID > model.MaxID {
+	if !common.ValidID(caller.ParticipantID) {
 		return model.Participant{}, businessError("FORBIDDEN", "Caller is not a registered participant.")
 	}
 	var participant model.Participant
@@ -70,7 +71,7 @@ func requireHuman(ctx context.Context, q *repository.Queries, caller model.Reque
 	return participant, nil
 }
 
-func requireParticipant(ctx context.Context, q *repository.Queries, id int64) (model.Participant, error) {
+func requireParticipant(ctx context.Context, q *repository.Queries, id string) (model.Participant, error) {
 	participant, err := q.GetParticipant(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = businessError("NOT_FOUND", "Participant not found.")
@@ -78,7 +79,7 @@ func requireParticipant(ctx context.Context, q *repository.Queries, id int64) (m
 	return participant, err
 }
 
-func requireAgent(ctx context.Context, q *repository.Queries, id int64) (model.Participant, error) {
+func requireAgent(ctx context.Context, q *repository.Queries, id string) (model.Participant, error) {
 	participant, err := requireParticipant(ctx, q, id)
 	if err != nil {
 		return participant, err
@@ -89,7 +90,7 @@ func requireAgent(ctx context.Context, q *repository.Queries, id int64) (model.P
 	return participant, nil
 }
 
-func memberExists(ctx context.Context, q *repository.Queries, conversationID, participantID int64) (bool, error) {
+func memberExists(ctx context.Context, q *repository.Queries, conversationID, participantID string) (bool, error) {
 	_, err := q.GetMembership(ctx, conversationID, participantID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -97,7 +98,7 @@ func memberExists(ctx context.Context, q *repository.Queries, conversationID, pa
 	return err == nil, err
 }
 
-func accessibleConversation(ctx context.Context, q *repository.Queries, caller model.RequestContext, id int64, lock bool) (model.Conversation, error) {
+func accessibleConversation(ctx context.Context, q *repository.Queries, caller model.RequestContext, id string, lock bool) (model.Conversation, error) {
 	ownerID, err := callerOwner(ctx, q, caller)
 	if err != nil {
 		return model.Conversation{}, err
@@ -145,7 +146,7 @@ func requireActive(conversation model.Conversation) error {
 	return nil
 }
 
-func editableGroup(ctx context.Context, q *repository.Queries, caller model.RequestContext, id int64) (model.Conversation, error) {
+func editableGroup(ctx context.Context, q *repository.Queries, caller model.RequestContext, id string) (model.Conversation, error) {
 	conversation, err := accessibleConversation(ctx, q, caller, id, true)
 	if err != nil {
 		return conversation, err
@@ -156,9 +157,9 @@ func editableGroup(ctx context.Context, q *repository.Queries, caller model.Requ
 	return conversation, requireActive(conversation)
 }
 
-func uniqueIDs(ids []int64) []int64 {
-	unique := make([]int64, 0, len(ids))
-	seen := make(map[int64]bool, len(ids))
+func uniqueIDs(ids []string) []string {
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		if !seen[id] {
 			seen[id] = true

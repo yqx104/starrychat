@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-
-	"yqx-team/backend/im/model"
 )
 
 type dbtx interface {
@@ -83,9 +81,9 @@ func (r *Repository) CheckSchema(ctx context.Context) error {
 	for _, query := range []string{
 		"SELECT participant_id, kind, name, created_at FROM participants LIMIT 0",
 		"SELECT participant_id, kind, owner_participant_id, username, password, created_at FROM participant_accounts LIMIT 0",
-		"SELECT conversation_id, kind, title, created_at, dissolved_at FROM conversations LIMIT 0",
+		"SELECT conversation_id, kind, title, created_at, dissolved_at, last_message_seq FROM conversations LIMIT 0",
 		"SELECT conversation_id, participant_id, created_at FROM conversation_members LIMIT 0",
-		"SELECT message_id, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids FROM messages LIMIT 0",
+		"SELECT message_id, message_seq, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids FROM messages LIMIT 0",
 	} {
 		rows, err := r.pool.QueryContext(ctx, query)
 		if err != nil {
@@ -96,15 +94,4 @@ func (r *Repository) CheckSchema(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-func insertedID(result sql.Result) (int64, error) {
-	id, err := result.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if id < 1 || id > model.MaxID {
-		return 0, errors.New("generated ID exceeds the API's safe integer range")
-	}
-	return id, nil
 }

@@ -30,7 +30,7 @@ export function MembersPanel({ conversation, members, participants, loading, err
     void run(async () => { onConversationChange(await api.rename(conversation.conversation_id, title)); setEditing(false); });
   };
   const add = () => {
-    const id = Number(candidate); if (!id) return;
+    const id = candidate; if (!id) return;
     void run(async () => { const member = await api.addMember(conversation.conversation_id, id); onMembersChange([...members, member]); setCandidate(''); });
   };
   const confirm = () => {

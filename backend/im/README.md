@@ -1,8 +1,16 @@
 # IM 服务
 
-独立 Go/MySQL 聊天服务。`handler/` 接收 HTTP，`service/` 检查业务规则并组织事务，`repository/` 执行 SQL；`auth/` 处理 JWT 和账号格式校验，`config/` 读取私有运行配置，`model/` 保存共享类型。所有测试位于 `tests/`。参与者、会话、消息继续使用自增数字 ID。支持多个真人，每个 Agent 固定属于创建它的真人；原有成员、引用、@、解散规则与所属范围一起校验。关联校验和响应组装由 Service 完成，Repository 只查询单表。
+独立 Go/MySQL 聊天服务。`handler/` 接收 HTTP，`service/` 检查业务规则并组织事务，`repository/` 执行 SQL；`common/` 提供 UUIDv7 生成和校验，`common/auth/` 处理 JWT 和账号格式校验，`config/` 读取私有运行配置，`model/` 保存共享类型。所有测试位于 `tests/`。参与者、会话、消息由后端统一生成小写标准 UUIDv7，数据库使用 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`，接口统一传字符串。支持多个真人，每个 Agent 固定属于创建它的真人；原有成员、引用、@、解散规则与所属范围一起校验。关联校验和响应组装由 Service 完成，Repository 只查询单表。
 
 IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。事件传输、Trigger 和统一 IM CLI 尚未实现。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
+
+## 标识与消息顺序
+
+所有业务 ID、Agent 归属、消息引用和 `mentioned_agent_ids` 数组元素均为标准 UUIDv7 字符串。接口拒绝数字 ID、非 v7 UUID、非标准格式或大写 UUID；数据库也约束 ID 格式。JWT 的 `sub` 使用参与者 UUID，旧数字身份令牌不再有效。
+
+消息新增数字字段 `message_seq`，每个会话从 1 开始独立递增。`conversations.last_message_seq` 初始为 0；发送在读已提交事务中通过 `SELECT ... FOR UPDATE` 锁定会话行，校验后递增计数器并插入消息，二者一起提交或回滚。`UNIQUE (conversation_id, message_seq)` 防止重复序号。序号最大为 `9007199254740991`，保持 JSON/JavaScript 数字精度；计数器不因重启或删除消息而重置。
+
+`GET /conversations/:conversation_id/messages` 使用 `limit`（1–50，默认 50）、`before_seq`（正整数）或 `after_seq`（非负整数，0 表示从头读取），两个方向互斥。初始查询返回最新一页，before 返回紧邻的更早一页，after 返回紧邻的更新一页；响应始终按 `message_seq` 升序，`has_more` 表示该方向还有数据。旧 `before_message_id` / `after_message_id` 参数不再接受。序号仅在指定会话内比较，UUID 用于引用和去重，不用于消息排序。只读业务事务继续使用可重复读。
 
 ## 本机启动
 
@@ -91,7 +99,7 @@ JWT 使用 HS256，严格验证签名、算法、sub、iss、aud、iat、exp，�
 若历史库已有真人但没有账号，只能由有权读取本机私有数据库配置的操作者显式指定 participant_id 绑定，不会任意选择一个真人。没有公开的“按 participant_id 接管”接口；绑定不会覆盖已存在的账号。以下方式通过隐藏输入读取密码，不将密码放入参数或 shell 历史：
 
 ```sh
-python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=sys.stderr,flush=True); pid=int(input()); print("Username: ",end="",file=sys.stderr,flush=True); print(json.dumps({"participant_id":pid,"username":input(),"password":getpass.getpass()}))' | go run ./backend/im/cmd -config localdeploy/im/config.json -bind-human-account
+python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=sys.stderr,flush=True); pid=input().strip(); print("Username: ",end="",file=sys.stderr,flush=True); print(json.dumps({"participant_id":pid,"username":input(),"password":getpass.getpass()}))' | go run ./backend/im/cmd -config localdeploy/im/config.json -bind-human-account
 ```
 
 ## Agent 管理与归属
@@ -122,4 +130,4 @@ go vet ./backend/im/...
 IM_TEST_MYSQL=1 go test -race -count=1 ./backend/im/...
 ```
 
-自动化 MySQL 测试创建一次性私有数据目录和 socket，关闭网络监听，测试完成后自动关闭进程并删除目录。包含原有 Handler/聊天业务/SQL 场景、并发单聊复用、发消息与成员变更、取消及回滚、64 路重复关闭、注册原子性、JWT 严格验证与受控时钟续期、Cookie/Bearer 隔离、私有密钥复用，以及真实 HTTP 监听到数据库和重启的验证。另有多真人管理、跨 owner 拒绝、并发账号唯一性与局部更新验证。测试账号只存在于隔离测试库。
+自动化 MySQL 测试创建一次性私有数据目录和 socket，关闭网络监听，测试完成后自动关闭进程并删除目录。包含原有 Handler/聊天业务/SQL 场景、并发单聊复用、跨连接池的会话内序号分配、计数器回滚与重启、UUID 与时间顺序相反时的分页、Trigger UUID 字段约束、发消息与成员变更、取消及回滚、64 路重复关闭、注册原子性、JWT 严格验证与受控时钟续期、Cookie/Bearer 隔离、私有密钥复用，以及真实 HTTP 监听到数据库和重启的验证。另有多真人管理、跨 owner 拒绝、并发账号唯一性与局部更新验证。测试账号只存在于隔离测试库。

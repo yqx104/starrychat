@@ -57,7 +57,7 @@ func New(service Service) *Handler {
 			"DELETE": {nil, h.removeMember},
 		}},
 		{regexp.MustCompile(`^/conversations/([^/]+)/messages/?$`), "GET, POST", map[string]operation{
-			"GET":  {[]string{"limit", "before_message_id", "after_message_id"}, h.listMessages},
+			"GET":  {[]string{"limit", "before_seq", "after_seq"}, h.listMessages},
 			"POST": {nil, h.sendMessage},
 		}},
 	}

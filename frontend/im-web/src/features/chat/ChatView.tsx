@@ -10,7 +10,7 @@ import { MembersPanel } from './MembersPanel';
 import { MessageList } from './MessageList';
 import { useMessages } from './useMessages';
 
-export function ChatView({ active, currentUser, conversation, participants, onConversationChange, onMembersLoaded, onBack }: { active: boolean; currentUser: Participant; conversation: Conversation; participants: Participant[]; onConversationChange: (conversation: Conversation) => void; onMembersLoaded: (id: number, members: Participant[]) => void; onBack: () => void }) {
+export function ChatView({ active, currentUser, conversation, participants, onConversationChange, onMembersLoaded, onBack }: { active: boolean; currentUser: Participant; conversation: Conversation; participants: Participant[]; onConversationChange: (conversation: Conversation) => void; onMembersLoaded: (id: string, members: Participant[]) => void; onBack: () => void }) {
   const [members, setMembers] = useState<Participant[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersError, setMembersError] = useState('');

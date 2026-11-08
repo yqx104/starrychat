@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"yqx-team/backend/im/common"
 	"yqx-team/backend/im/model"
 )
 
@@ -13,7 +14,7 @@ func scanParticipant(row scanner) (model.Participant, error) {
 	return participant, err
 }
 
-func (q *Queries) GetParticipants(ctx context.Context, ids []int64) ([]model.Participant, error) {
+func (q *Queries) GetParticipants(ctx context.Context, ids []string) ([]model.Participant, error) {
 	if len(ids) == 0 {
 		return []model.Participant{}, nil
 	}
@@ -38,15 +39,15 @@ func (q *Queries) GetParticipants(ctx context.Context, ids []int64) ([]model.Par
 	return participants, rows.Err()
 }
 
-func (q *Queries) GetParticipant(ctx context.Context, id int64) (model.Participant, error) {
+func (q *Queries) GetParticipant(ctx context.Context, id string) (model.Participant, error) {
 	return scanParticipant(q.db.QueryRowContext(ctx, "SELECT participant_id, kind, name, created_at FROM participants WHERE participant_id = ?", id))
 }
 
-func (q *Queries) LockParticipant(ctx context.Context, id int64) (model.Participant, error) {
+func (q *Queries) LockParticipant(ctx context.Context, id string) (model.Participant, error) {
 	return scanParticipant(q.db.QueryRowContext(ctx, "SELECT participant_id, kind, name, created_at FROM participants WHERE participant_id = ? FOR UPDATE", id))
 }
 
-func (q *Queries) SetParticipantName(ctx context.Context, id int64, name string) error {
+func (q *Queries) SetParticipantName(ctx context.Context, id string, name string) error {
 	_, err := q.db.ExecContext(ctx, "UPDATE participants SET name=? WHERE participant_id=?", name, id)
 	return err
 }
@@ -76,10 +77,13 @@ func (q *Queries) ListParticipants(ctx context.Context, kind model.ParticipantKi
 
 // Low-level storage for future initialization; no registration HTTP endpoint is implied.
 func (q *Queries) InsertParticipant(ctx context.Context, kind model.ParticipantKind, name string, createdAt int64) (model.Participant, error) {
-	result, err := q.db.ExecContext(ctx, "INSERT INTO participants (kind, name, created_at) VALUES (?, ?, ?)", kind, name, createdAt)
+	id, err := common.NewID()
 	if err != nil {
 		return model.Participant{}, err
 	}
-	id, err := insertedID(result)
+	_, err = q.db.ExecContext(ctx, "INSERT INTO participants (participant_id, kind, name, created_at) VALUES (?, ?, ?, ?)", id, kind, name, createdAt)
+	if err != nil {
+		return model.Participant{}, err
+	}
 	return model.Participant{ParticipantID: id, Kind: kind, Name: name, CreatedAt: createdAt}, err
 }

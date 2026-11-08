@@ -26,6 +26,7 @@ var databaseSequence atomic.Int64
 var _ handler.Service = (*service.Service)(nil)
 
 type imFixture struct {
+	conversationIDs              []string
 	dsn                          string
 	store                        *repository.Repository
 	db                           *sql.DB
@@ -76,12 +77,12 @@ func newIMFixture(t *testing.T, instance *mysqlInstance) *imFixture {
 				return err
 			}
 			*seed.target = participant
-			var ownerID *int64
+			var ownerID *string
 			if participant.Kind == model.Agent {
 				owner := f.human.ParticipantID
 				ownerID = &owner
 			}
-			if err := q.InsertAccount(t.Context(), model.ParticipantAccount{ParticipantID: participant.ParticipantID, Kind: participant.Kind, OwnerParticipantID: ownerID, Username: fmt.Sprintf("fixture-%d", participant.ParticipantID), Password: "business-fixture-password", CreatedAt: participant.CreatedAt}); err != nil {
+			if err := q.InsertAccount(t.Context(), model.ParticipantAccount{ParticipantID: participant.ParticipantID, Kind: participant.Kind, OwnerParticipantID: ownerID, Username: fmt.Sprintf("fixture-%s", participant.ParticipantID), Password: "business-fixture-password", CreatedAt: participant.CreatedAt}); err != nil {
 				return err
 			}
 		}
@@ -94,7 +95,7 @@ func newIMFixture(t *testing.T, instance *mysqlInstance) *imFixture {
 	return f
 }
 
-func (f *imFixture) request(ctx context.Context, method, path string, body any, caller int64) *httptest.ResponseRecorder {
+func (f *imFixture) request(ctx context.Context, method, path string, body any, caller string) *httptest.ResponseRecorder {
 	var data []byte
 	if body != nil {
 		var err error
@@ -114,7 +115,7 @@ func (f *imFixture) request(ctx context.Context, method, path string, body any, 
 type apiOptions struct {
 	method string
 	body   any
-	caller int64
+	caller string
 	status int
 }
 
@@ -127,7 +128,7 @@ func apiJSON[T any](t *testing.T, f *imFixture, path string, options ...apiOptio
 	if opt.method == "" {
 		opt.method = "GET"
 	}
-	if opt.caller == 0 {
+	if opt.caller == "" {
 		opt.caller = f.human.ParticipantID
 	}
 	if opt.status == 0 {
@@ -143,21 +144,32 @@ func apiJSON[T any](t *testing.T, f *imFixture, path string, options ...apiOptio
 			t.Fatalf("decode response: %v: %s", err, w.Body)
 		}
 	}
+	if response, ok := any(value).(handler.ConversationResponse); ok && opt.method == "POST" && (path == "/conversations" || path == "/conversations/direct") {
+		found := false
+		for _, id := range f.conversationIDs {
+			if id == response.Conversation.ConversationID {
+				found = true
+			}
+		}
+		if !found {
+			f.conversationIDs = append(f.conversationIDs, response.Conversation.ConversationID)
+		}
+	}
 	return value
 }
 
 func (f *imFixture) group(t *testing.T, agents ...model.Participant) model.Conversation {
 	t.Helper()
-	ids := make([]int64, len(agents))
+	ids := make([]string, len(agents))
 	for i, agent := range agents {
 		ids[i] = agent.ParticipantID
 	}
 	return apiJSON[handler.ConversationResponse](t, f, "/conversations", apiOptions{method: "POST", status: 201, body: map[string]any{"title": "Team", "agent_ids": ids}}).Conversation
 }
 
-func (f *imFixture) send(t *testing.T, conversationID int64, content string, sender model.Participant) model.Message {
+func (f *imFixture) send(t *testing.T, conversationID string, content string, sender model.Participant) model.Message {
 	t.Helper()
-	return apiJSON[handler.MessageResponse](t, f, fmt.Sprintf("/conversations/%d/messages", conversationID), apiOptions{method: "POST", status: 201, caller: sender.ParticipantID, body: map[string]any{"content": content}}).Message
+	return apiJSON[handler.MessageResponse](t, f, fmt.Sprintf("/conversations/%s/messages", conversationID), apiOptions{method: "POST", status: 201, caller: sender.ParticipantID, body: map[string]any{"content": content}}).Message
 }
 
 func (f *imFixture) exec(t *testing.T, query string, args ...any) {
@@ -181,4 +193,12 @@ func equalValue(t *testing.T, got, want any) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v; want %#v", got, want)
 	}
+}
+
+// conversationID names the nth conversation created by this fixture, preserving its server-generated UUID.
+func (f *imFixture) conversationID(index int) string {
+	if index > 0 && index <= len(f.conversationIDs) {
+		return f.conversationIDs[index-1]
+	}
+	return testID(int64(index))
 }

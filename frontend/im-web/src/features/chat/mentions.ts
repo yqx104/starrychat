@@ -1,4 +1,4 @@
-export interface MentionSpan { id: number; start: number; end: number }
+export interface MentionSpan { id: string; start: number; end: number }
 export interface Draft { text: string; mentions: MentionSpan[] }
 export interface Selection { start: number; end: number }
 export interface MentionQuery { start: number; end: number; text: string }

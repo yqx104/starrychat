@@ -1,6 +1,6 @@
 # IM Web
 
-React + TypeScript 单页前端。`src/app` 负责装配，`src/api` 定义接口与请求客户端，`src/features` 按认证、会话和聊天组织业务，`src/components` 放共享组件，`src/styles` 放样式；测试与演示接口替身放在 `tests`。聊天状态仅保存在当前页面内存中。
+React + TypeScript 单页前端。`src/app` 负责装配，`src/api` 定义接口与请求客户端，`src/features` 按认证、会话和聊天组织业务，`src/components` 放共享组件，`src/styles` 放样式；测试与演示接口替身放在 `tests`。聊天状态仅保存在当前页面内存中。业务 ID 均为后端生成的标准 UUIDv7 字符串；消息按会话内的数字 `message_seq` 排序，通过 `before_seq` / `after_seq` 分页和增量同步，引用与去重仍使用 `message_id`。发送回执只合并消息，不越过尚未拉取的数据推进轮询游标。
 
 在仓库根目录运行：
 

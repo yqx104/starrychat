@@ -40,8 +40,8 @@ func (f *authFixture) createAgent(t *testing.T, owner loginResult, username stri
 	return agent
 }
 
-func participantIDs(participants []model.Participant) []int64 {
-	ids := make([]int64, len(participants))
+func participantIDs(participants []model.Participant) []string {
+	ids := make([]string, len(participants))
 	for i, p := range participants {
 		ids[i] = p.ParticipantID
 	}
@@ -63,16 +63,16 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		agentLogin := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
 		for _, token := range []string{one.Token, agentLogin.Token} {
 			people := responseValue[handler.ParticipantsResponse](t, f.call("GET", "/participants", nil, authRequest{bearer: token}), 200).Participants
-			equalValue(t, participantIDs(people), []int64{one.Participant.ParticipantID, a.ParticipantID, b.ParticipantID})
+			equalValue(t, participantIDs(people), []string{one.Participant.ParticipantID, a.ParticipantID, b.ParticipantID})
 			filtered := responseValue[handler.ParticipantsResponse](t, f.call("GET", "/participants?kind=agent", nil, authRequest{bearer: token}), 200).Participants
-			equalValue(t, participantIDs(filtered), []int64{a.ParticipantID, b.ParticipantID})
+			equalValue(t, participantIDs(filtered), []string{a.ParticipantID, b.ParticipantID})
 			human := responseValue[handler.ParticipantsResponse](t, f.call("GET", "/participants?kind=human", nil, authRequest{bearer: token}), 200).Participants
-			equalValue(t, participantIDs(human), []int64{one.Participant.ParticipantID})
+			equalValue(t, participantIDs(human), []string{one.Participant.ParticipantID})
 		}
 		assertError(t, f.call("GET", "/agents", nil, authRequest{bearer: agentLogin.Token}), 403, "FORBIDDEN")
 		assertError(t, f.call("POST", "/agents", map[string]any{"name": "Denied", "username": "denied", "password": testPassword}, authRequest{bearer: agentLogin.Token}), 403, "FORBIDDEN")
-		assertError(t, f.call("PATCH", fmt.Sprintf("/agents/%d", a.ParticipantID), map[string]any{"name": "Denied"}, authRequest{bearer: agentLogin.Token}), 403, "FORBIDDEN")
-		assertError(t, f.call("PATCH", fmt.Sprintf("/agents/%d", a.ParticipantID), map[string]any{"name": "Denied"}, authRequest{bearer: two.Token}), 403, "FORBIDDEN")
+		assertError(t, f.call("PATCH", fmt.Sprintf("/agents/%s", a.ParticipantID), map[string]any{"name": "Denied"}, authRequest{bearer: agentLogin.Token}), 403, "FORBIDDEN")
+		assertError(t, f.call("PATCH", fmt.Sprintf("/agents/%s", a.ParticipantID), map[string]any{"name": "Denied"}, authRequest{bearer: two.Token}), 403, "FORBIDDEN")
 		for _, human := range []loginResult{one, two} {
 			account, err := f.store.GetAccount(t.Context(), human.Participant.ParticipantID)
 			if err != nil {
@@ -100,13 +100,13 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		agent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
 		foreignAgent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("foreign", "bearer")), 200)
 		assertError(t, f.call("POST", "/conversations/direct", map[string]any{"agent_id": foreign.ParticipantID}, authRequest{bearer: one.Token}), 403, "FORBIDDEN")
-		assertError(t, f.call("POST", "/conversations", map[string]any{"title": "Denied", "agent_ids": []int64{a.ParticipantID, foreign.ParticipantID}}, authRequest{bearer: one.Token}), 403, "FORBIDDEN")
+		assertError(t, f.call("POST", "/conversations", map[string]any{"title": "Denied", "agent_ids": []string{a.ParticipantID, foreign.ParticipantID}}, authRequest{bearer: one.Token}), 403, "FORBIDDEN")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations"), int64(0))
-		group := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations", map[string]any{"title": "Own group", "agent_ids": []int64{a.ParticipantID}}, authRequest{bearer: one.Token}), 201).Conversation
-		path := fmt.Sprintf("/conversations/%d", group.ConversationID)
+		group := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations", map[string]any{"title": "Own group", "agent_ids": []string{a.ParticipantID}}, authRequest{bearer: one.Token}), 201).Conversation
+		path := fmt.Sprintf("/conversations/%s", group.ConversationID)
 		for _, token := range []string{one.Token, agent.Token} {
 			assertError(t, f.call("POST", path+"/members", map[string]any{"participant_id": foreign.ParticipantID}, authRequest{bearer: token}), 403, "FORBIDDEN")
-			assertError(t, f.call("POST", path+"/messages", map[string]any{"content": "Denied mention", "mentioned_agent_ids": []int64{foreign.ParticipantID}}, authRequest{bearer: token}), 403, "FORBIDDEN")
+			assertError(t, f.call("POST", path+"/messages", map[string]any{"content": "Denied mention", "mentioned_agent_ids": []string{foreign.ParticipantID}}, authRequest{bearer: token}), 403, "FORBIDDEN")
 		}
 		responseValue[handler.MemberResponse](t, f.call("POST", path+"/members", map[string]any{"participant_id": b.ParticipantID}, authRequest{bearer: agent.Token}), 200)
 		for _, token := range []string{two.Token, foreignAgent.Token} {
@@ -130,7 +130,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		owner := f.humanLogin(t)
 		a := f.createAgent(t, owner, "alpha")
 		original := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
-		path := fmt.Sprintf("/agents/%d", a.ParticipantID)
+		path := fmt.Sprintf("/agents/%s", a.ParticipantID)
 		password := "new-isolated-密码-pass "
 		w := f.call("PATCH", path, map[string]any{"name": "Renamed", "username": "renamed-agent", "password": password}, authRequest{bearer: owner.Token})
 		updated := responseValue[agentResponse](t, w, 200).Agent
@@ -178,7 +178,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 	t.Run("forged_ownership_invalid_patches_and_legacy_registration_cannot_bypass", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
 		owner := f.humanLogin(t)
-		for _, extra := range []map[string]any{{"kind": "human"}, {"owner_participant_id": 999}, {"participant_id": 999}, {"password_hash": "hash"}} {
+		for _, extra := range []map[string]any{{"kind": "human"}, {"owner_participant_id": 999}, {"participant_id": testID(999)}, {"password_hash": "hash"}} {
 			body := map[string]any{"name": "Agent", "username": "alpha", "password": testPassword}
 			for k, v := range extra {
 				body[k] = v
@@ -197,7 +197,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		equalValue(t, *account.OwnerParticipantID, owner.Participant.ParticipantID)
-		path := fmt.Sprintf("/agents/%d", created.ParticipantID)
+		path := fmt.Sprintf("/agents/%s", created.ParticipantID)
 		for _, body := range []map[string]any{{}, {"name": " "}, {"username": nil}, {"password": "short"}, {"password": strings.Repeat("x", 73)}, {"kind": "human"}, {"owner_participant_id": 999}, {"username": "bad name"}} {
 			assertError(t, f.call("PATCH", path, body, authRequest{bearer: owner.Token}), 400, "INVALID_REQUEST")
 		}
@@ -211,12 +211,12 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		owner := f.humanLogin(t)
 		a := f.createAgent(t, owner, "alpha")
 		for _, statement := range []string{
-			fmt.Sprintf("UPDATE participant_accounts SET kind='human' WHERE participant_id=%d", a.ParticipantID),
-			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id=NULL WHERE participant_id=%d", a.ParticipantID),
-			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id=0 WHERE participant_id=%d", a.ParticipantID),
-			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id=%d WHERE participant_id=%d", a.ParticipantID, a.ParticipantID),
-			fmt.Sprintf("UPDATE participant_accounts SET kind='other' WHERE participant_id=%d", a.ParticipantID),
-			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id=%d WHERE participant_id=%d", a.ParticipantID, owner.Participant.ParticipantID),
+			fmt.Sprintf("UPDATE participant_accounts SET kind='human' WHERE participant_id='%s'", a.ParticipantID),
+			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id=NULL WHERE participant_id='%s'", a.ParticipantID),
+			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id=0 WHERE participant_id='%s'", a.ParticipantID),
+			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id='%s' WHERE participant_id='%s'", a.ParticipantID, a.ParticipantID),
+			fmt.Sprintf("UPDATE participant_accounts SET kind='other' WHERE participant_id='%s'", a.ParticipantID),
+			fmt.Sprintf("UPDATE participant_accounts SET owner_participant_id='%s' WHERE participant_id='%s'", a.ParticipantID, owner.Participant.ParticipantID),
 		} {
 			if _, err := f.db.ExecContext(t.Context(), statement); err == nil {
 				t.Fatal("invalid kind/owner combination accepted")
@@ -226,7 +226,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.exec(t, "UPDATE participant_accounts SET owner_participant_id=999999 WHERE participant_id=?", a.ParticipantID)
+		f.exec(t, "UPDATE participant_accounts SET owner_participant_id=? WHERE participant_id=?", testID(999999), a.ParticipantID)
 		assertError(t, f.call("GET", "/auth/me", nil, authRequest{bearer: raw}), 401, "UNAUTHORIZED")
 		f.exec(t, "UPDATE participant_accounts SET kind='human',owner_participant_id=NULL WHERE participant_id=?", a.ParticipantID)
 		assertError(t, f.call("GET", "/auth/me", nil, authRequest{bearer: raw}), 401, "UNAUTHORIZED")
@@ -301,7 +301,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := service.New(f.store)
-		if _, err := s.BindHumanAccount(t.Context(), 0, "bound", testPassword); err == nil {
+		if _, err := s.BindHumanAccount(t.Context(), "", "bound", testPassword); err == nil {
 			t.Fatal("implicit human binding accepted")
 		}
 		bound, err := s.BindHumanAccount(t.Context(), second.ParticipantID, "bound", testPassword)

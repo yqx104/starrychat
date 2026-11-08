@@ -1,7 +1,8 @@
+import { testID } from './ids';
 import { describe, expect, it, vi } from 'vitest';
 import { ImApi } from '../src/api/client';
 
-const person = { participant_id: 7, kind: 'human', name: '用户', created_at: 100 };
+const person = { participant_id: testID(7), kind: 'human', name: '用户', created_at: 100 };
 const json = (value: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 
 describe('cookie authentication and request lifetime', () => {

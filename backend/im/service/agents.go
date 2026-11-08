@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"yqx-team/backend/im/auth"
+	"yqx-team/backend/im/common/auth"
 	"yqx-team/backend/im/model"
 	"yqx-team/backend/im/repository"
 )
@@ -17,8 +17,8 @@ func (s *Service) ListAgents(ctx context.Context, caller model.RequestContext) (
 		if err != nil {
 			return nil, err
 		}
-		ids := make([]int64, len(accounts))
-		byID := make(map[int64]model.ParticipantAccount, len(accounts))
+		ids := make([]string, len(accounts))
+		byID := make(map[string]model.ParticipantAccount, len(accounts))
 		for i, account := range accounts {
 			ids[i] = account.ParticipantID
 			byID[account.ParticipantID] = account

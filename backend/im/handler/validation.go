@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"yqx-team/backend/im/common"
 )
 
 type httpError struct {
@@ -25,9 +26,9 @@ func invalid(message string) error {
 	return &httpError{http.StatusBadRequest, "INVALID_REQUEST", message}
 }
 
-func validID(id int64) bool { return id > 0 && id <= MaxID }
+func validID(id string) bool { return common.ValidID(id) }
 
-func decimalID(value, field string) (int64, error) {
+func decimalSeq(value, field string, allowZero bool) (int64, error) {
 	if value == "" {
 		return 0, invalid(field + " must contain decimal digits.")
 	}
@@ -36,19 +37,19 @@ func decimalID(value, field string) (int64, error) {
 			return 0, invalid(field + " must contain decimal digits.")
 		}
 	}
-	id, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || !validID(id) {
-		return 0, invalid(field + " must be a positive safe integer.")
+	seq, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || seq > MaxSeq || (!allowZero && seq == 0) {
+		return 0, invalid(field + " must be a safe integer in the allowed range.")
 	}
-	return id, nil
+	return seq, nil
 }
 
-func pathID(value, field string) (int64, error) {
+func pathID(value, field string) (string, error) {
 	decoded, err := url.PathUnescape(value)
-	if err != nil {
-		return 0, invalid(field + " is malformed.")
+	if err != nil || !validID(decoded) {
+		return "", invalid(field + " must be a canonical UUIDv7.")
 	}
-	return decimalID(decoded, field)
+	return decoded, nil
 }
 
 func queryParameters(raw string, allowed []string) (url.Values, error) {
@@ -108,20 +109,20 @@ func bodyObject(r *http.Request, allowed []string, allowEmpty bool) (map[string]
 	return body, nil
 }
 
-func bodyID(raw json.RawMessage, field string) (int64, error) {
-	var value float64
-	if err := json.Unmarshal(raw, &value); err != nil || value < 1 || value > float64(MaxID) || math.Trunc(value) != value {
-		return 0, invalid(field + " must be a positive safe integer.")
+func bodyID(raw json.RawMessage, field string) (string, error) {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil || !validID(value) {
+		return "", invalid(field + " must be a canonical UUIDv7 string.")
 	}
-	return int64(value), nil
+	return value, nil
 }
 
-func bodyIDs(raw json.RawMessage, field string) ([]int64, error) {
+func bodyIDs(raw json.RawMessage, field string) ([]string, error) {
 	var values []json.RawMessage
 	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
 		return nil, invalid(field + " must be an array of IDs.")
 	}
-	ids := make([]int64, len(values))
+	ids := make([]string, len(values))
 	for index, raw := range values {
 		id, err := bodyID(raw, fmt.Sprintf("%s[%d]", field, index))
 		if err != nil {
@@ -140,10 +141,10 @@ func bodyText(raw json.RawMessage, field string) (string, error) {
 	return value, nil
 }
 
-func messageQuery(conversationID int64, query url.Values) (MessagePageQuery, error) {
+func messageQuery(conversationID string, query url.Values) (MessagePageQuery, error) {
 	result := MessagePageQuery{ConversationID: conversationID, Limit: 50}
 	if query.Has("limit") {
-		limit, err := decimalID(query.Get("limit"), "limit")
+		limit, err := decimalSeq(query.Get("limit"), "limit", false)
 		if err != nil {
 			return result, err
 		}
@@ -152,22 +153,22 @@ func messageQuery(conversationID int64, query url.Values) (MessagePageQuery, err
 		}
 		result.Limit = int(limit)
 	}
-	if query.Has("before_message_id") && query.Has("after_message_id") {
-		return result, invalid("before_message_id and after_message_id are mutually exclusive.")
+	if query.Has("before_seq") && query.Has("after_seq") {
+		return result, invalid("before_seq and after_seq are mutually exclusive.")
 	}
-	if query.Has("before_message_id") {
-		id, err := decimalID(query.Get("before_message_id"), "before_message_id")
+	if query.Has("before_seq") {
+		id, err := decimalSeq(query.Get("before_seq"), "before_seq", false)
 		if err != nil {
 			return result, err
 		}
-		result.BeforeMessageID = &id
+		result.BeforeSeq = &id
 	}
-	if query.Has("after_message_id") {
-		id, err := decimalID(query.Get("after_message_id"), "after_message_id")
+	if query.Has("after_seq") {
+		id, err := decimalSeq(query.Get("after_seq"), "after_seq", true)
 		if err != nil {
 			return result, err
 		}
-		result.AfterMessageID = &id
+		result.AfterSeq = &id
 	}
 	return result, nil
 }

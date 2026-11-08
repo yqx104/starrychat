@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 
+	"yqx-team/backend/im/common"
 	"yqx-team/backend/im/model"
 )
 
-const messageColumns = "message_id, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids"
+const messageColumns = "message_id, message_seq, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids"
 
 func scanMessage(row scanner) (model.Message, error) {
 	var message model.Message
 	var mentions []byte
-	err := row.Scan(&message.MessageID, &message.ConversationID, &message.SenderID, &message.Content, &message.QuotedMessageID, &message.CreatedAt, &mentions)
+	err := row.Scan(&message.MessageID, &message.MessageSeq, &message.ConversationID, &message.SenderID, &message.Content, &message.QuotedMessageID, &message.CreatedAt, &mentions)
 	if err != nil {
 		return message, err
 	}
@@ -24,32 +25,35 @@ func scanMessage(row scanner) (model.Message, error) {
 		return message, errors.New("stored mentions must be an array")
 	}
 	for _, id := range message.MentionedAgentIDs {
-		if id < 1 || id > model.MaxID {
-			return message, errors.New("stored mention is not a safe positive ID")
+		if !common.ValidID(id) {
+			return message, errors.New("stored mention is not a canonical UUIDv7")
 		}
 	}
 	return message, nil
 }
 
-func (q *Queries) GetMessage(ctx context.Context, id int64) (model.Message, error) {
+func (q *Queries) GetMessage(ctx context.Context, id string) (model.Message, error) {
 	return scanMessage(q.db.QueryRowContext(ctx, "SELECT "+messageColumns+" FROM messages WHERE message_id = ?", id))
 }
 
 func (q *Queries) InsertMessage(ctx context.Context, message model.Message) (model.Message, error) {
 	if message.MentionedAgentIDs == nil {
-		message.MentionedAgentIDs = []int64{}
+		message.MentionedAgentIDs = []string{}
 	}
 	mentions, err := json.Marshal(message.MentionedAgentIDs)
 	if err != nil {
 		return model.Message{}, err
 	}
-	result, err := q.db.ExecContext(ctx, `INSERT INTO messages
-		(conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids)
-		VALUES (?, ?, ?, ?, ?, ?)`, message.ConversationID, message.SenderID, message.Content, message.QuotedMessageID, message.CreatedAt, mentions)
+	message.MessageID, err = common.NewID()
 	if err != nil {
 		return model.Message{}, err
 	}
-	message.MessageID, err = insertedID(result)
+	_, err = q.db.ExecContext(ctx, `INSERT INTO messages
+		(message_id, message_seq, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, message.MessageID, message.MessageSeq, message.ConversationID, message.SenderID, message.Content, message.QuotedMessageID, message.CreatedAt, mentions)
+	if err != nil {
+		return model.Message{}, err
+	}
 	return message, err
 }
 
@@ -58,16 +62,16 @@ func (q *Queries) ListMessages(ctx context.Context, query model.MessagePageQuery
 	sqlQuery := "SELECT " + messageColumns + " FROM messages WHERE conversation_id = ?"
 	args := []any{query.ConversationID}
 	order := " DESC"
-	if query.AfterMessageID != nil {
-		sqlQuery += " AND message_id > ?"
-		args = append(args, *query.AfterMessageID)
+	if query.AfterSeq != nil {
+		sqlQuery += " AND message_seq > ?"
+		args = append(args, *query.AfterSeq)
 		order = " ASC"
-	} else if query.BeforeMessageID != nil {
-		sqlQuery += " AND message_id < ?"
-		args = append(args, *query.BeforeMessageID)
+	} else if query.BeforeSeq != nil {
+		sqlQuery += " AND message_seq < ?"
+		args = append(args, *query.BeforeSeq)
 	}
 	args = append(args, query.Limit)
-	rows, err := q.db.QueryContext(ctx, sqlQuery+" ORDER BY message_id"+order+" LIMIT ?", args...)
+	rows, err := q.db.QueryContext(ctx, sqlQuery+" ORDER BY message_seq"+order+" LIMIT ?", args...)
 	if err != nil {
 		return nil, err
 	}

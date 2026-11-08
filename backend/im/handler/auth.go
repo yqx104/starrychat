@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"yqx-team/backend/im/auth"
+	"yqx-team/backend/im/common/auth"
 	"yqx-team/backend/im/model"
 )
 
@@ -18,7 +18,7 @@ const TokenCookie = "im_token"
 type AuthService interface {
 	Register(context.Context, model.RequestContext, model.RegisterInput) (model.Participant, error)
 	Login(context.Context, string, string) (model.Participant, error)
-	AuthenticatedParticipant(context.Context, int64) (model.Participant, error)
+	AuthenticatedParticipant(context.Context, string) (model.Participant, error)
 	ListAgents(context.Context, model.RequestContext) ([]model.AgentAccount, error)
 	CreateAgent(context.Context, model.RequestContext, model.CreateAgentInput) (model.AgentAccount, error)
 	UpdateAgent(context.Context, model.RequestContext, model.UpdateAgentInput) (model.AgentAccount, error)
@@ -229,7 +229,7 @@ func (a *API) authenticate(r *http.Request) (model.Participant, string, error) {
 	return participant, transport, err
 }
 
-func (a *API) renew(w http.ResponseWriter, r *http.Request, id int64, transport string) (string, time.Time, error) {
+func (a *API) renew(w http.ResponseWriter, r *http.Request, id string, transport string) (string, time.Time, error) {
 	token, expires, err := a.tokens.Issue(id)
 	if err != nil {
 		return "", time.Time{}, err

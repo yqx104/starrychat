@@ -8,7 +8,7 @@ import (
 	"yqx-team/backend/im/repository"
 )
 
-func (s *Service) ListMembers(ctx context.Context, caller model.RequestContext, id int64) ([]model.Participant, error) {
+func (s *Service) ListMembers(ctx context.Context, caller model.RequestContext, id string) ([]model.Participant, error) {
 	return read(ctx, s, func(q *repository.Queries) ([]model.Participant, error) {
 		if _, err := accessibleConversation(ctx, q, caller, id, false); err != nil {
 			return nil, err

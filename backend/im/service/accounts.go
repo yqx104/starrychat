@@ -10,7 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-sql-driver/mysql"
-	"yqx-team/backend/im/auth"
+	"yqx-team/backend/im/common"
+	"yqx-team/backend/im/common/auth"
 	"yqx-team/backend/im/model"
 	"yqx-team/backend/im/repository"
 )
@@ -31,7 +32,7 @@ func (s *Service) Register(ctx context.Context, caller model.RequestContext, inp
 		return model.Participant{}, businessError("INVALID_REQUEST", "Name must be 1–100 characters and kind must be human or agent.")
 	}
 	participant, err := write(ctx, s, func(q *repository.Queries) (model.Participant, error) {
-		var ownerID *int64
+		var ownerID *string
 		if input.Kind == model.Agent {
 			if _, err := requireHuman(ctx, q, caller, true); err != nil {
 				return model.Participant{}, err
@@ -64,8 +65,8 @@ func (s *Service) Login(ctx context.Context, username, password string) (model.P
 	return s.AuthenticatedParticipant(ctx, account.ParticipantID)
 }
 
-func (s *Service) AuthenticatedParticipant(ctx context.Context, id int64) (model.Participant, error) {
-	if id < 1 || id > model.MaxID {
+func (s *Service) AuthenticatedParticipant(ctx context.Context, id string) (model.Participant, error) {
+	if !common.ValidID(id) {
 		return model.Participant{}, businessError("UNAUTHORIZED", "Authentication required.")
 	}
 	return read(ctx, s, func(q *repository.Queries) (model.Participant, error) {
@@ -91,8 +92,8 @@ func (s *Service) AuthenticatedParticipant(ctx context.Context, id int64) (model
 }
 
 // Local maintenance only. No HTTP route accepts an existing participant ID for binding.
-func (s *Service) BindHumanAccount(ctx context.Context, participantID int64, username, password string) (model.Participant, error) {
-	if participantID < 1 || participantID > model.MaxID {
+func (s *Service) BindHumanAccount(ctx context.Context, participantID string, username, password string) (model.Participant, error) {
+	if !common.ValidID(participantID) {
 		return model.Participant{}, businessError("INVALID_REQUEST", "An explicit human participant_id is required.")
 	}
 	if err := auth.ValidateCredentials(username, password); err != nil {

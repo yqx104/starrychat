@@ -8,53 +8,53 @@ import (
 	"yqx-team/backend/im/repository"
 )
 
-func ownerOf(ctx context.Context, q *repository.Queries, participant model.Participant) (int64, error) {
+func ownerOf(ctx context.Context, q *repository.Queries, participant model.Participant) (string, error) {
 	denied := businessError("FORBIDDEN", "Participant ownership is not valid.")
 	account, err := q.GetAccount(ctx, participant.ParticipantID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, denied
+		return "", denied
 	}
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	if account.Kind != participant.Kind {
-		return 0, denied
+		return "", denied
 	}
 	if participant.Kind == model.Human && account.OwnerParticipantID == nil {
 		return participant.ParticipantID, nil
 	}
 	if participant.Kind != model.Agent || account.OwnerParticipantID == nil {
-		return 0, denied
+		return "", denied
 	}
 	owner, err := q.GetParticipant(ctx, *account.OwnerParticipantID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, denied
+		return "", denied
 	}
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	ownerAccount, err := q.GetAccount(ctx, owner.ParticipantID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, denied
+		return "", denied
 	}
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	if owner.Kind != model.Human || ownerAccount.Kind != model.Human || ownerAccount.OwnerParticipantID != nil {
-		return 0, denied
+		return "", denied
 	}
 	return owner.ParticipantID, nil
 }
 
-func callerOwner(ctx context.Context, q *repository.Queries, caller model.RequestContext) (int64, error) {
+func callerOwner(ctx context.Context, q *repository.Queries, caller model.RequestContext) (string, error) {
 	participant, err := requireCaller(ctx, q, caller, false)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	return ownerOf(ctx, q, participant)
 }
 
-func requireOwnedAgent(ctx context.Context, q *repository.Queries, ownerID, id int64) (model.Participant, error) {
+func requireOwnedAgent(ctx context.Context, q *repository.Queries, ownerID, id string) (model.Participant, error) {
 	agent, err := requireAgent(ctx, q, id)
 	if err != nil {
 		return agent, err
@@ -69,12 +69,12 @@ func requireOwnedAgent(ctx context.Context, q *repository.Queries, ownerID, id i
 	return agent, nil
 }
 
-func conversationOwnedBy(ctx context.Context, q *repository.Queries, conversationID, ownerID int64) (bool, error) {
+func conversationOwnedBy(ctx context.Context, q *repository.Queries, conversationID, ownerID string) (bool, error) {
 	members, err := q.ListMemberships(ctx, conversationID)
 	if err != nil {
 		return false, err
 	}
-	ids := make([]int64, len(members))
+	ids := make([]string, len(members))
 	for i, m := range members {
 		ids[i] = m.ParticipantID
 	}
@@ -82,10 +82,10 @@ func conversationOwnedBy(ctx context.Context, q *repository.Queries, conversatio
 	if err != nil {
 		return false, err
 	}
-	var humanID int64
+	var humanID string
 	for _, p := range participants {
 		if p.Kind == model.Human {
-			if humanID != 0 {
+			if humanID != "" {
 				return false, nil
 			}
 			humanID = p.ParticipantID

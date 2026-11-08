@@ -7,14 +7,14 @@ import { conversationName } from './labels';
 export type Section = 'chats' | 'contacts';
 export function Sidebar({ user, onLogout, section, setSection, conversations, participants, membersByConversation, selectedId, onSelect, onCreate, onManageAgents, onOpenDirect, busyAgent, contactError }: {
   user: Participant; onLogout: () => void; section: Section; setSection: (section: Section) => void; conversations: Conversation[]; participants: Participant[];
-  membersByConversation: Record<number, Participant[]>; selectedId: number | null; onSelect: (id: number) => void; onCreate: () => void; onManageAgents: () => void;
-  onOpenDirect: (agent: Participant) => void; busyAgent: number | null; contactError: string;
+  membersByConversation: Record<string, Participant[]>; selectedId: string | null; onSelect: (id: string) => void; onCreate: () => void; onManageAgents: () => void;
+  onOpenDirect: (agent: Participant) => void; busyAgent: string | null; contactError: string;
 }) {
   const [search, setSearch] = useState('');
   const agents = participants.filter((p) => p.kind === 'agent');
   const matches = (text: string) => text.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase());
-  const currentMembers = (id: number) => membersByConversation[id]?.map((member) => participants.find((person) => person.participant_id === member.participant_id) ?? member);
-  const visibleConversations = [...conversations].sort((a, b) => b.created_at - a.created_at || b.conversation_id - a.conversation_id).filter((c) => matches(conversationName(c, currentMembers(c.conversation_id))));
+  const currentMembers = (id: string) => membersByConversation[id]?.map((member) => participants.find((person) => person.participant_id === member.participant_id) ?? member);
+  const visibleConversations = [...conversations].sort((a, b) => b.created_at - a.created_at || b.conversation_id.localeCompare(a.conversation_id)).filter((c) => matches(conversationName(c, currentMembers(c.conversation_id))));
   const visibleAgents = agents.filter((p) => matches(p.name));
   return <>
     <nav className="rail" aria-label="主导航">
