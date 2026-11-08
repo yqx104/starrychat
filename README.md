@@ -2,7 +2,7 @@
 
 个人 Agent 协作项目。同一仓库组织多个独立服务；用户本人是唯一真人，其余聊天成员都是 Agent。
 
-前端和 Pi 使用 TypeScript/npm workspaces；IM 与 Trigger 使用 Go/go.work，IM 数据库使用 MySQL。已完成默认 Pi 的最小运行验证，以及 IM 的 Handler、Service、Repository 和建表 SQL；协作系统尚不能启动。
+前端和 Pi 使用 TypeScript/npm workspaces；IM 与 Trigger 使用 Go/go.work，分别使用独立的 MySQL 数据库 `im` 和 `trigger`。已完成默认 Pi 的最小运行验证、IM 的 Handler、Service、Repository，以及 Trigger 的 Agent 注册和 channel 订阅表；协作系统尚不能启动。
 
 ## 模块
 
@@ -21,7 +21,7 @@ yqx-team/
 | --- | --- |
 | [IM 前端](frontend/im-web/README.md) | 创建单聊、群聊，选择成员，收发消息和 @ Agent。 |
 | [IM 后端](backend/im/README.md) | Go 服务，用 MySQL 保存参与者、会话和消息，提供统一消息接口与消息事件。 |
-| [Trigger](backend/trigger/README.md) | 独立 Go 模块，接收 IM 消息事件，按规则选择目标 Agent 并唤起。 |
+| [Trigger](backend/trigger/README.md) | 独立 Go 模块，接收 channel 消息并向订阅的 Agent 投递；首版来源为 IM 单聊和群聊。 |
 | [默认 Pi Agent](agents/pi/README.md) | 本地 Pi 已构建并通过会话验证；项目适配入口及 IM 对接尚未实现。 |
 
 IM 只承担聊天职责。Trigger 承担触发和路由职责。Pi 的底层库留在默认 Agent 边界内，IM 和 Trigger 不依赖 Pi。
