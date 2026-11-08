@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/model"
 )
 
 func (h *Handler) subscribe(w http.ResponseWriter, r *http.Request) {

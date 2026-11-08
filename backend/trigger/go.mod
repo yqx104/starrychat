@@ -1,4 +1,4 @@
-module yqx-team/backend/trigger
+module starrychat/backend/trigger
 
 go 1.27.0
 

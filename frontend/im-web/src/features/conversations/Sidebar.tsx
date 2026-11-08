@@ -18,7 +18,7 @@ export function Sidebar({ user, onLogout, section, setSection, conversations, pa
   const visibleAgents = agents.filter((p) => matches(p.name));
   return <>
     <nav className="rail" aria-label="主导航">
-      <div className="brand-mark" aria-label="YQX">Y<span>·</span></div>
+      <div className="brand-mark" aria-label="starrychat">s<span>·</span></div>
       <div className="rail-nav">
         <button className={`rail-button ${section === 'chats' ? 'is-active' : ''}`} onClick={() => { setSection('chats'); setSearch(''); }} aria-label="消息" aria-current={section === 'chats' ? 'page' : undefined}><Icon name="chat" /><span>消息</span></button>
         <button className={`rail-button ${section === 'contacts' ? 'is-active' : ''}`} onClick={() => { setSection('contacts'); setSearch(''); }} aria-label="通讯录" aria-current={section === 'contacts' ? 'page' : undefined}><Icon name="users" /><span>通讯录</span></button>
@@ -26,7 +26,7 @@ export function Sidebar({ user, onLogout, section, setSection, conversations, pa
       <div className="rail-bottom"><div title={user.name}><Avatar name={user.name} id={user.participant_id} size="small" /></div><button className="rail-logout" onClick={onLogout} aria-label="退出登录" title="退出登录"><Icon name="logout" /></button></div>
     </nav>
     <aside className="sidebar" aria-label={section === 'chats' ? '会话列表' : '通讯录'}>
-      <div className="sidebar-top"><div><div className="eyebrow">WORKSPACE <span> / </span> YQX</div><h1>{section === 'chats' ? '消息' : '通讯录'}</h1><p>{section === 'chats' ? '与团队保持同步' : '找到你的 Agent 伙伴'}</p></div>
+      <div className="sidebar-top"><div><div className="eyebrow">WORKSPACE <span> / </span> starrychat</div><h1>{section === 'chats' ? '消息' : '通讯录'}</h1><p>{section === 'chats' ? '与团队保持同步' : '找到你的 Agent 伙伴'}</p></div>
         {section === 'chats' && <button className="square-button" onClick={onCreate} aria-label="创建群聊" title="创建群聊"><Icon name="plus" /></button>}
       </div>
       <label className="search-box"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={section === 'chats' ? '搜索会话' : '搜索 Agent'} aria-label={section === 'chats' ? '搜索会话' : '搜索 Agent'} /></label>

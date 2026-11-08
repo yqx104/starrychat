@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"yqx-team/backend/im/handler"
+	"starrychat/backend/im/handler"
 )
 
 type serviceCall struct {

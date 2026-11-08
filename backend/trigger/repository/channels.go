@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/model"
 )
 
 const channelColumns = "agent_id, channel_id, channel_type, conversation_id, created_at"

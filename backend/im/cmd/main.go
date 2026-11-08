@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"yqx-team/backend/im/common/auth"
-	"yqx-team/backend/im/config"
-	"yqx-team/backend/im/handler"
-	"yqx-team/backend/im/repository"
-	"yqx-team/backend/im/service"
+	"starrychat/backend/im/common/auth"
+	"starrychat/backend/im/config"
+	"starrychat/backend/im/handler"
+	"starrychat/backend/im/repository"
+	"starrychat/backend/im/service"
 )
 
 func main() {

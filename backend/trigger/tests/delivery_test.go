@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"yqx-team/backend/trigger/delivery"
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/delivery"
+	"starrychat/backend/trigger/model"
 )
 
 func TestDeliveryDoesNotFollowRedirectsOrIgnoreCancellation(t *testing.T) {

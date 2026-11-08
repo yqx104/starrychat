@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"yqx-team/backend/im/config"
-	"yqx-team/backend/im/handler"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/config"
+	"starrychat/backend/im/handler"
+	"starrychat/backend/im/model"
 )
 
 func TestLocalRuntimePortProbeAllowsGracefulRestart(t *testing.T) {

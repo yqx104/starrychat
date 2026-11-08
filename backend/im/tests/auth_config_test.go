@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"yqx-team/backend/im/config"
+	"starrychat/backend/im/config"
 )
 
 func TestSigningKeyPersistsAcrossConcurrentStarts(t *testing.T) {

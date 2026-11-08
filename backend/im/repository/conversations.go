@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"yqx-team/backend/im/common"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/common"
+	"starrychat/backend/im/model"
 )
 
 // NextMessageSeq runs in the sending transaction, after locking the conversation.

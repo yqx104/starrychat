@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/model"
 )
 
 const MaxSeq = model.MaxSeq

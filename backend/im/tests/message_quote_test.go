@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"yqx-team/backend/im/handler"
+	"starrychat/backend/im/handler"
 )
 
 func TestOptionalQuotedMessageID(t *testing.T) {

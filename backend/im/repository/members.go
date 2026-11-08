@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/model"
 )
 
 func scanMembership(row scanner) (model.Membership, error) {

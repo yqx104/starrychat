@@ -1,5 +1,5 @@
 {
-  "name": "@yqx-team/pi-agent",
+  "name": "@starrychat/pi-agent",
   "version": "0.0.0",
   "private": true,
   "dependencies": {

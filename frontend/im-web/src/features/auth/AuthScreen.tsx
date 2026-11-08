@@ -31,8 +31,8 @@ export function AuthScreen({ reauth, login, register }: { reauth: boolean; login
   const switchMode = () => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); setPassword(''); };
   return <main className="auth-screen">
     <section className="auth-card" aria-label={mode === 'login' ? '登录' : '注册账号'}>
-      <div className="brand-mark">Y<span>·</span></div>
-      <div className="auth-eyebrow">YQX / WORKSPACE</div>
+      <div className="brand-mark">s<span>·</span></div>
+      <div className="auth-eyebrow">starrychat / WORKSPACE</div>
       <h1>{mode === 'login' ? '欢迎回来' : '创建你的账号'}</h1>
       <p className="auth-intro">{reauth ? '登录已过期，请重新登录以继续。当前草稿会保留在本页。' : mode === 'login' ? '登录后，继续你的对话。' : '注册真人账号，开启你的对话空间。'}</p>
       <form onSubmit={submit}>

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/model"
 )
 
 type Handler struct {

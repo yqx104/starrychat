@@ -8,7 +8,7 @@
 
 上游源码已包含无界面 SDK、自定义工具、会话管理和 RPC；项目的默认 Agent 运行入口与 IM 适配仍未实现。
 
-本 workspace 使用 `@yqx-team/pi-agent` 名称，通过 `file:` 路径依赖本地 pi-ai、pi-agent-core、pi-coding-agent。项目根注册八个 Pi 包，包间也直接使用本地 `file:` 路径；保留的上游 `1.5.0` 字段不代表采用 npm 发布内容。安装时实际核对了八个包均链接到本目录的源码。
+本 workspace 使用 `@starrychat/pi-agent` 名称，通过 `file:` 路径依赖本地 pi-ai、pi-agent-core、pi-coding-agent。项目根注册八个 Pi 包，包间也直接使用本地 `file:` 路径；保留的上游 `1.5.0` 字段不代表采用 npm 发布内容。安装时实际核对了八个包均链接到本目录的源码。
 
 2026-11-08 已安装必要依赖、生成公开模型目录数据并完成八包构建。本地 CLI 返回 `1.5.0`；隔离 SDK 会话创建成功，提交 `Hello` 后通过真实 Anthropic 认证检查返回 `No API key found for anthropic.`，随后会话恢复空闲并释放，未发出网络请求。模型成功调用未验证，也未运行完整测试套件。
 

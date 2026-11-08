@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"yqx-team/backend/im/common/auth"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/common/auth"
+	"starrychat/backend/im/model"
 )
 
 func testTokens(t *testing.T) (*auth.Tokens, *atomic.Int64, []byte) {

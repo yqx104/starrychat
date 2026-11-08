@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/model"
 )
 
 const accountColumns = "participant_id, kind, owner_participant_id, username, password, created_at"

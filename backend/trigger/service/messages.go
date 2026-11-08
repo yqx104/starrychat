@@ -6,8 +6,8 @@ import (
 	"slices"
 	"sync"
 
-	"yqx-team/backend/trigger/common"
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/common"
+	"starrychat/backend/trigger/model"
 )
 
 func (s *Service) ReceiveMessage(ctx context.Context, message model.Message) (model.MessageResult, error) {

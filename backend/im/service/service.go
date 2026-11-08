@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 
-	"yqx-team/backend/im/common"
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
+	"starrychat/backend/im/common"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
 )
 
 type Service struct{ repository *repository.Repository }

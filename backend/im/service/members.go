@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
 )
 
 func (s *Service) ListMembers(ctx context.Context, caller model.RequestContext, id string) ([]model.Participant, error) {

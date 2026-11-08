@@ -1,4 +1,4 @@
-module yqx-team/backend/im
+module starrychat/backend/im
 
 go 1.27.0
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"yqx-team/backend/trigger/common"
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/common"
+	"starrychat/backend/trigger/model"
 )
 
 func (s *Service) RegisterAgent(ctx context.Context, id string) (model.Agent, error) {

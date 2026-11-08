@@ -7,8 +7,8 @@ import (
 	"slices"
 	"time"
 
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
 )
 
 func (s *Service) ListMessages(ctx context.Context, caller model.RequestContext, query model.MessagePageQuery) (model.MessagePage, error) {

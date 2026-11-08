@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"yqx-team/backend/im/common/auth"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/common/auth"
+	"starrychat/backend/im/model"
 )
 
 const TokenCookie = "im_token"

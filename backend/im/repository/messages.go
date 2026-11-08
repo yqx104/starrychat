@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"yqx-team/backend/im/common"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/common"
+	"starrychat/backend/im/model"
 )
 
 const messageColumns = "message_id, message_seq, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids"

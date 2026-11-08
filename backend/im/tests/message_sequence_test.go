@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"yqx-team/backend/im/common"
-	"yqx-team/backend/im/handler"
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
-	"yqx-team/backend/im/service"
+	"starrychat/backend/im/common"
+	"starrychat/backend/im/handler"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
+	"starrychat/backend/im/service"
 )
 
 func runMessageSequenceTests(t *testing.T, instance *mysqlInstance) {

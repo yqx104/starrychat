@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"yqx-team/backend/trigger/common"
-	"yqx-team/backend/trigger/model"
-	"yqx-team/backend/trigger/repository"
+	"starrychat/backend/trigger/common"
+	"starrychat/backend/trigger/model"
+	"starrychat/backend/trigger/repository"
 )
 
 func (s *Service) Subscribe(ctx context.Context, input model.SubscribeInput) (model.SubscriptionResult, error) {

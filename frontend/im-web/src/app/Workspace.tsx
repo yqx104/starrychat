@@ -54,7 +54,7 @@ export function Workspace({ user, active, onLogout }: { user: Participant; activ
   };
   const createGroup = async (title: string, ids: string[]) => { const conversation = await api.createGroup(title, ids); upsert(conversation); select(conversation.conversation_id); };
   const selected = conversations.find((conversation) => conversation.conversation_id === selectedId);
-  if (loading || loadError) return <div className="connection-screen"><div className="connection-card"><div className="brand-mark">Y<span>·</span></div>{loading ? <><div className="spinner" /><h1>正在连接对话空间</h1><p>正在获取会话与通讯录…</p></> : <><span className="empty-orb"><Icon name="refresh" /></span><h1>暂时无法连接</h1><p>{loadError}</p><button className="button button--primary" onClick={() => setVersion((value) => value + 1)}>重新连接</button></>}</div></div>;
+  if (loading || loadError) return <div className="connection-screen"><div className="connection-card"><div className="brand-mark">s<span>·</span></div>{loading ? <><div className="spinner" /><h1>正在连接对话空间</h1><p>正在获取会话与通讯录…</p></> : <><span className="empty-orb"><Icon name="refresh" /></span><h1>暂时无法连接</h1><p>{loadError}</p><button className="button button--primary" onClick={() => setVersion((value) => value + 1)}>重新连接</button></>}</div></div>;
   return <div className={`workspace ${mobileChat ? 'workspace--mobile-chat' : ''}`}>
     {import.meta.env.VITE_IM_DEMO === 'true' && <div className="demo-banner" role="status">演示预览 · 以下为示例数据，不连接真实业务</div>}
     <div className="workspace-layout">

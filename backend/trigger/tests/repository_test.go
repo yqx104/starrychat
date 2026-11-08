@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"yqx-team/backend/trigger/config"
-	"yqx-team/backend/trigger/handler"
-	"yqx-team/backend/trigger/repository"
-	"yqx-team/backend/trigger/service"
+	"starrychat/backend/trigger/config"
+	"starrychat/backend/trigger/handler"
+	"starrychat/backend/trigger/repository"
+	"starrychat/backend/trigger/service"
 )
 
 // Opt-in and read-only: use the existing private config without creating data or changing schema.

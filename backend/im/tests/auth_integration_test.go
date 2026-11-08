@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"yqx-team/backend/im/common/auth"
-	"yqx-team/backend/im/handler"
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
-	"yqx-team/backend/im/service"
+	"starrychat/backend/im/common/auth"
+	"starrychat/backend/im/handler"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
+	"starrychat/backend/im/service"
 )
 
 const testPassword = "only-isolated-tests-123"

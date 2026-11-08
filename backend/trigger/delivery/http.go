@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/model"
 )
 
 // HTTP posts an envelope to the shared Agent adapter, which selects the agent by agent_id.

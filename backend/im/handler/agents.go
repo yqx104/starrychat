@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 	"strings"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/model"
 )
 
 func (a *API) agents(w http.ResponseWriter, r *http.Request, caller RequestContext) {

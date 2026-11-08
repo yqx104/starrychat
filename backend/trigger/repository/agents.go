@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/model"
 )
 
 func (q *Queries) GetAgent(ctx context.Context, id string) (model.Agent, error) {

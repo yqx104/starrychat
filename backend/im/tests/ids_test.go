@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"yqx-team/backend/im/common"
+	"starrychat/backend/im/common"
 )
 
 func testID(n int64) string { return fmt.Sprintf("00000000-0000-7000-8000-%012x", n) }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"yqx-team/backend/im/common"
-	"yqx-team/backend/im/model"
+	"starrychat/backend/im/common"
+	"starrychat/backend/im/model"
 )
 
 func scanParticipant(row scanner) (model.Participant, error) {

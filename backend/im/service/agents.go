@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"yqx-team/backend/im/common/auth"
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
+	"starrychat/backend/im/common/auth"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
 )
 
 func (s *Service) ListAgents(ctx context.Context, caller model.RequestContext) ([]model.AgentAccount, error) {

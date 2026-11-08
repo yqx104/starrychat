@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"yqx-team/backend/trigger/handler"
+	"starrychat/backend/trigger/handler"
 )
 
 type healthService struct {

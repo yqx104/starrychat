@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"yqx-team/backend/trigger/common"
-	"yqx-team/backend/trigger/model"
-	"yqx-team/backend/trigger/repository"
+	"starrychat/backend/trigger/common"
+	"starrychat/backend/trigger/model"
+	"starrychat/backend/trigger/repository"
 )
 
 type Deliverer interface {

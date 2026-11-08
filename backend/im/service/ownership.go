@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
 )
 
 func ownerOf(ctx context.Context, q *repository.Queries, participant model.Participant) (string, error) {

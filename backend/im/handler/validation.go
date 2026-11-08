@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode"
 
-	"yqx-team/backend/im/common"
+	"starrychat/backend/im/common"
 )
 
 type httpError struct {

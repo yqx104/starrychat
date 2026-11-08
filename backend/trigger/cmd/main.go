@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"yqx-team/backend/trigger/config"
-	"yqx-team/backend/trigger/delivery"
-	"yqx-team/backend/trigger/handler"
-	"yqx-team/backend/trigger/repository"
-	"yqx-team/backend/trigger/service"
+	"starrychat/backend/trigger/config"
+	"starrychat/backend/trigger/delivery"
+	"starrychat/backend/trigger/handler"
+	"starrychat/backend/trigger/repository"
+	"starrychat/backend/trigger/service"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"yqx-team/backend/trigger/model"
+	"starrychat/backend/trigger/model"
 )
 
 type Service interface {

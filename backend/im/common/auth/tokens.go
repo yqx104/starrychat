@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"yqx-team/backend/im/common"
+	"starrychat/backend/im/common"
 )
 
 const Lifetime = 7 * 24 * time.Hour

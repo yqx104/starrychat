@@ -18,10 +18,10 @@ npm install
 手动开发及检查命令：
 
 ```sh
-IM_API_TARGET=http://127.0.0.1:4180 npm run dev --workspace=@yqx-team/im-web -- --host 127.0.0.1 --port 5173 --strictPort
-npm run typecheck --workspace=@yqx-team/im-web
-npm run test --workspace=@yqx-team/im-web
-npm run build --workspace=@yqx-team/im-web
+IM_API_TARGET=http://127.0.0.1:4180 npm run dev --workspace=@starrychat/im-web -- --host 127.0.0.1 --port 5173 --strictPort
+npm run typecheck --workspace=@starrychat/im-web
+npm run test --workspace=@starrychat/im-web
+npm run build --workspace=@starrychat/im-web
 ```
 
 默认 API 地址为同源 `/im-api`。开发时 `IM_API_TARGET` 启用 Vite 代理，转发时去掉 `/im-api` 前缀并保留浏览器的 Host 与 Origin；部署时需由同源反向代理完成相同转发。也可用 `VITE_IM_API_BASE_URL` 设置其他同源路径（`/` 表示同源根路径），不假设服务已在任何端口运行。
@@ -32,7 +32,7 @@ npm run build --workspace=@yqx-team/im-web
 
 ```sh
 node frontend/im-web/tests/fixtures/demo-server.mjs
-IM_API_TARGET=http://127.0.0.1:4178 VITE_IM_DEMO=true npm run dev --workspace=@yqx-team/im-web -- --host 127.0.0.1
+IM_API_TARGET=http://127.0.0.1:4178 VITE_IM_DEMO=true npm run dev --workspace=@starrychat/im-web -- --host 127.0.0.1
 ```
 
 打开 Vite 显示的地址，使用“注册账号”创建演示账号。退出演示服务后示例数据会丢失；不要用于真实业务。

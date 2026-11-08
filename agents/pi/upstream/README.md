@@ -1,6 +1,6 @@
 # Pi 本地精简 fork
 
-本目录已实际纳入默认 Pi Agent 所需源码及构建配套，由 yqx-team 独立维护。保留来源和许可证用于追溯，不配置自动拉取、定期同步或自动替换为上游/npm 新版本的机制。
+本目录已实际纳入默认 Pi Agent 所需源码及构建配套，由 starrychat 独立维护。保留来源和许可证用于追溯，不配置自动拉取、定期同步或自动替换为上游/npm 新版本的机制。
 
 ## 来源
 
@@ -32,7 +32,7 @@
 
 ## 本地配置调整
 
-- 项目根注册八个包及 `@yqx-team/pi-upstream` 构建 workspace。三个核心包之间及其内部依赖直接使用 `file:../<包目录>`，默认 Agent 使用 `file:./upstream/packages/<包目录>`；安装后八个包均已核对链接到本地目录。npm 的 [workspaces](https://docs.npmjs.com/cli/v11/using-npm/workspaces/) 负责本地包链接。
+- 项目根注册八个包及 `@starrychat/pi-upstream` 构建 workspace。三个核心包之间及其内部依赖直接使用 `file:../<包目录>`，默认 Agent 使用 `file:./upstream/packages/<包目录>`；安装后八个包均已核对链接到本地目录。npm 的 [workspaces](https://docs.npmjs.com/cli/v11/using-npm/workspaces/) 负责本地包链接。
 - 首次安装发现 Pi 包的 `file:` overrides 与 npm 11.12.1 的 workspace 直接依赖规格冲突，报 `EOVERRIDE`。已删除项目根和构建根的这组覆盖，将九条包间依赖改为上述相对路径；保留 `protobufjs` 的原有覆盖。外部依赖版本和运行源码未修改。
 - 安装根显式声明 schema 原有的测试依赖 `ata-validator@1.61.3`。本机 npm 将它记录在嵌套 workspace 下却未安装；放到安装根后，按锁文件重新安装及 `npm ls --workspaces --depth=0` 均通过。本次不执行该工具或其测试。
 - 此处 `package.json` 只保留八包构建顺序、模型目录生成及可选原生构建命令和所需工具版本，不导入上游的发布、版本更新或安装钩子。
@@ -43,7 +43,7 @@
 
 ## 本地运行
 
-以下命令在 `/Users/yqx/Desktop/yqx-team` 执行。当前依赖、模型目录数据和构建产物已保留，可直接验证本地 CLI：
+以下命令在项目根目录执行。当前依赖、模型目录数据和构建产物已保留，可直接验证本地 CLI：
 
 ```sh
 node agents/pi/upstream/packages/coding-agent/dist/bundle/cli.js --version
@@ -54,15 +54,15 @@ SDK 入口为 `agents/pi/upstream/packages/coding-agent/dist/index.js`；本项�
 已有模型目录数据时，重新构建使用：
 
 ```sh
-npm run build:offline --workspace @yqx-team/pi-upstream
+npm run build:offline --workspace @starrychat/pi-upstream
 ```
 
 需要重新准备环境时，按根目录的 `package-lock.json` 安装，并显式生成缺失的模型元数据。安装禁用依赖生命周期脚本，构建命令单独运行：
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
-npm run hydrate:model-data --workspace @yqx-team/pi-upstream
-npm run build:offline --workspace @yqx-team/pi-upstream
+npm run hydrate:model-data --workspace @starrychat/pi-upstream
+npm run build:offline --workspace @starrychat/pi-upstream
 ```
 
 `hydrate:model-data` 读取公开模型目录，不发送对话请求，只写生成的 JSON 数据，不改已纳入的运行源码。

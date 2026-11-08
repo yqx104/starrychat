@@ -1,4 +1,4 @@
-# yqx-team
+# starrychat
 
 个人 Agent 协作项目。同一仓库组织多个独立服务；用户本人是唯一真人，其余聊天成员都是 Agent。
 
@@ -7,7 +7,7 @@
 ## 模块
 
 ```text
-yqx-team/
+starrychat/
 ├── frontend/im-web/     IM 前端
 ├── backend/im/          独立 IM 后端
 ├── backend/trigger/     独立触发服务

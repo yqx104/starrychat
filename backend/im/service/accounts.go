@@ -10,10 +10,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-sql-driver/mysql"
-	"yqx-team/backend/im/common"
-	"yqx-team/backend/im/common/auth"
-	"yqx-team/backend/im/model"
-	"yqx-team/backend/im/repository"
+	"starrychat/backend/im/common"
+	"starrychat/backend/im/common/auth"
+	"starrychat/backend/im/model"
+	"starrychat/backend/im/repository"
 )
 
 func accountError(err error) error {
