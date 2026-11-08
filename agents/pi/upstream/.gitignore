@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.artifacts/
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+packages/ai/src/providers/data/
+packages/ai/src/providers/.model-generation-*/
+packages/tui/native/*/prebuilds/
+packages/coding-agent/examples/extensions/doom-overlay/doom/build/

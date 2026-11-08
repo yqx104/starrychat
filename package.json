@@ -1,0 +1,24 @@
+{
+  "name": "yqx-team",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend/*",
+    "agents/*",
+    "agents/pi/upstream",
+    "agents/pi/upstream/packages/schema",
+    "agents/pi/upstream/packages/telemetry",
+    "agents/pi/upstream/packages/tui",
+    "agents/pi/upstream/packages/codemode",
+    "agents/pi/upstream/packages/mcp",
+    "agents/pi/upstream/packages/ai",
+    "agents/pi/upstream/packages/agent",
+    "agents/pi/upstream/packages/coding-agent"
+  ],
+  "devDependencies": {
+    "ata-validator": "1.61.3"
+  },
+  "overrides": {
+    "protobufjs": "7.6.6"
+  }
+}

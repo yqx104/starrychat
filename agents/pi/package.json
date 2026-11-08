@@ -1,0 +1,10 @@
+{
+  "name": "@yqx-team/pi-agent",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@earendil-works/pi-ai": "file:./upstream/packages/ai",
+    "@earendil-works/pi-agent-core": "file:./upstream/packages/agent",
+    "@earendil-works/pi-coding-agent": "file:./upstream/packages/coding-agent"
+  }
+}

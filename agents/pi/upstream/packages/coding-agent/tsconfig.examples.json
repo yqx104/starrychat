@@ -1,0 +1,25 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@earendil-works/pi-coding-agent": [
+				"./src/index.ts"
+			],
+			"@earendil-works/pi-tui": [
+				"../tui/src/index.ts"
+			],
+			"@earendil-works/pi-ai": [
+				"../ai/src/index.ts"
+			]
+		},
+		"skipLibCheck": true
+	},
+	"include": [
+		"examples/**/*.ts"
+	],
+	"exclude": [
+		"node_modules",
+		"dist"
+	]
+}
