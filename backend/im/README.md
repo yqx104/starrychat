@@ -2,7 +2,7 @@
 
 独立 Go/MySQL 聊天服务。`handler/` 接收 HTTP，`service/` 检查业务规则并组织事务，`repository/` 执行 SQL；`common/` 提供 UUIDv7 生成和校验，`common/auth/` 处理 JWT 和账号格式校验，`config/` 读取私有运行配置，`model/` 保存共享类型。所有测试位于 `tests/`。参与者、会话、消息由后端统一生成小写标准 UUIDv7，数据库使用 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`，接口统一传字符串。支持多个真人，每个 Agent 固定属于创建它的真人；原有成员、引用、@、解散规则与所属范围一起校验。关联校验和响应组装由 Service 完成，Repository 只查询单表。
 
-IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。事件传输、Trigger 和统一 IM CLI 尚未实现。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
+IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。Trigger 已实现注册、订阅和消息接口，IM 到 Trigger 的调用、事件传输和统一 IM CLI 尚未实现。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
 
 ## 标识与消息顺序
 
@@ -29,7 +29,7 @@ MySQL 独立部署和管理；IM 只通过配置连接数据库。本机使用 H
 
 真实预览监听 `127.0.0.1:4180`，具体地址读取 `config.json`。脚本只构建和启停 IM、报告应用进程状态，不启动或关闭 MySQL，也不写入测试账号、群聊或消息。MySQL 不可用或配置缺失时，应用启动失败，不会自动创建数据库实例。
 
-统一入口先启动 IM，再启动 IM Web；停止时先停止前端，再停止后端。前端使用 Vite 开发服务器，监听 `127.0.0.1:5173`，从 IM 配置中读取监听地址来设置 `/im-api` 代理。两者也可通过各自目录中的 `start.sh`、`stop.sh`、`status.sh` 单独管理。MySQL 始终独立运行。
+统一入口按 Trigger → IM → IM Web 启动，停止时顺序相反。Trigger 的配置与准备方式见 [Trigger 说明](../trigger/README.md)。前端使用 Vite 开发服务器，监听 `127.0.0.1:5173`，从 IM 配置中读取监听地址来设置 `/im-api` 代理。各服务也可通过各自目录中的 `start.sh`、`stop.sh`、`status.sh` 单独管理。MySQL 始终独立运行。
 
 `localdeploy/` 和 `locallog/` 都已被 Git 忽略，包含本机脚本和运行文件，不随仓库分发：
 
