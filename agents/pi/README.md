@@ -2,7 +2,7 @@
 
 项目默认 Agent 的独立模块，已在 [upstream/](upstream/README.md) 纳入 Pi 的三个核心包、五个必要内部依赖及构建配套。此副本作为本项目独立维护的本地精简 fork，不配置自动同步。
 
-后续由适配入口接受 [Trigger](../../backend/trigger/README.md) 唤起，通过统一 IM CLI 访问 [IM 服务](../../backend/im/README.md)，收发和列出消息。具体唤起协议、CLI 和上下文映射尚未实现。外部 Agent 无需使用本模块，首版不引入 ACP。
+后续由适配入口接受 [Trigger](../../server/backend/trigger/README.md) 唤起，通过统一 IM CLI 访问 [IM 服务](../../server/backend/im/README.md)，收发和列出消息。具体唤起协议、CLI 和上下文映射尚未实现。外部 Agent 无需使用本模块，首版不引入 ACP。
 
 内部主要使用 pi-ai、pi-agent-core、pi-coding-agent 及其所需依赖。这些是默认 Pi Agent 内部的库，不是三个业务服务，也不成为其他外部 Agent 的依赖要求。
 

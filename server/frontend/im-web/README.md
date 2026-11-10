@@ -31,7 +31,7 @@ npm run build --workspace=@starrychat/im-web
 独立演示（数据与账号仅在演示进程内存中，不是真实后端）：在两个终端分别运行：
 
 ```sh
-node frontend/im-web/tests/fixtures/demo-server.mjs
+node server/frontend/im-web/tests/fixtures/demo-server.mjs
 IM_API_TARGET=http://127.0.0.1:4178 VITE_IM_DEMO=true npm run dev --workspace=@starrychat/im-web -- --host 127.0.0.1
 ```
 

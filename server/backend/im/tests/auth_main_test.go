@@ -24,7 +24,7 @@ import (
 )
 
 func TestLocalRuntimePortProbeAllowsGracefulRestart(t *testing.T) {
-	script := filepath.Join("..", "..", "..", "localdeploy", "im", "local.py")
+	script := filepath.Join("..", "..", "..", "..", "localdeploy", "im", "local.py")
 	if _, err := os.Stat(script); os.IsNotExist(err) {
 		t.Skip("localdeploy is Git-ignored; local deployment script is not installed")
 	} else if err != nil {

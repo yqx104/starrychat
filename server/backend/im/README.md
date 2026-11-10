@@ -62,7 +62,7 @@ locallog/
 直接启动 Go 入口：
 
 ```sh
-go run ./backend/im/cmd -config localdeploy/im/config.json
+go run ./server/backend/im/cmd -config localdeploy/im/config.json
 ```
 
 也可用 `IM_CONFIG` 指定配置文件。配置字段是 `mysql_dsn`、`address`、`signing_key_file`、`insecure_local_http`、`issuer`、`audience`。默认地址 `127.0.0.1:4180`，相对密钥路径基于配置文件所在目录。HTTP 开发模式只允许环回 IP 监听；非本地 Cookie 请求须通过 HTTPS。入口检查连接及五张表后才开始监听，收到 SIGINT/SIGTERM 时先停止 HTTP 请求，再关闭连接池；缺少配置或表结构不符会明确失败，不隐式设置调用者。
@@ -99,7 +99,7 @@ JWT 使用 HS256，严格验证签名、算法、sub、iss、aud、iat、exp，�
 若历史库已有真人但没有账号，只能由有权读取本机私有数据库配置的操作者显式指定 participant_id 绑定，不会任意选择一个真人。没有公开的“按 participant_id 接管”接口；绑定不会覆盖已存在的账号。以下方式通过隐藏输入读取密码，不将密码放入参数或 shell 历史：
 
 ```sh
-python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=sys.stderr,flush=True); pid=input().strip(); print("Username: ",end="",file=sys.stderr,flush=True); print(json.dumps({"participant_id":pid,"username":input(),"password":getpass.getpass()}))' | go run ./backend/im/cmd -config localdeploy/im/config.json -bind-human-account
+python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=sys.stderr,flush=True); pid=input().strip(); print("Username: ",end="",file=sys.stderr,flush=True); print(json.dumps({"participant_id":pid,"username":input(),"password":getpass.getpass()}))' | go run ./server/backend/im/cmd -config localdeploy/im/config.json -bind-human-account
 ```
 
 ## Agent 管理与归属
@@ -125,9 +125,9 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 ## 验证
 
 ```sh
-go build ./backend/im/...
-go vet ./backend/im/...
-IM_TEST_MYSQL=1 go test -race -count=1 ./backend/im/...
+go build ./server/backend/im/...
+go vet ./server/backend/im/...
+IM_TEST_MYSQL=1 go test -race -count=1 ./server/backend/im/...
 ```
 
 自动化 MySQL 测试创建一次性私有数据目录和 socket，关闭网络监听，测试完成后自动关闭进程并删除目录。包含原有 Handler/聊天业务/SQL 场景、并发单聊复用、跨连接池的会话内序号分配、计数器回滚与重启、UUID 与时间顺序相反时的分页、Trigger UUID 字段约束、发消息与成员变更、取消及回滚、64 路重复关闭、注册原子性、JWT 严格验证与受控时钟续期、Cookie/Bearer 隔离、私有密钥复用，以及真实 HTTP 监听到数据库和重启的验证。另有多真人管理、跨 owner 拒绝、并发账号唯一性与局部更新验证。测试账号只存在于隔离测试库。

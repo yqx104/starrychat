@@ -8,9 +8,17 @@
 
 ```text
 starrychat/
-├── frontend/im-web/     IM 前端
-├── backend/im/          独立 IM 后端
-├── backend/trigger/     独立触发服务
+├── server/
+│   ├── backend/
+│   │   ├── im/         独立 IM 后端
+│   │   └── trigger/    独立触发服务
+│   └── frontend/
+│       └── im-web/     IM 前端
+├── client/
+│   ├── adaptor/
+│   │   ├── backend/    客户端 adaptor 后端（占位）
+│   │   └── frontend/   客户端 adaptor 前端（占位）
+│   └── pi-adaptor/     Pi 适配器（占位）
 ├── agents/pi/           内置默认 Pi Agent
 │   └── upstream/        独立维护的 Pi 源码副本及构建配套
 ├── localdeploy/         本机启停脚本及各服务运行文件（Git 忽略）
@@ -19,12 +27,14 @@ starrychat/
 
 | 模块 | 职责 |
 | --- | --- |
-| [IM 前端](frontend/im-web/README.md) | 创建单聊、群聊，选择成员，收发消息和 @ Agent。 |
-| [IM 后端](backend/im/README.md) | Go 服务，用 MySQL 保存参与者、会话和消息，提供统一消息接口与消息事件。 |
-| [Trigger](backend/trigger/README.md) | 独立 Go 模块，接收 channel 消息并向订阅的 Agent 投递；首版来源为 IM 单聊和群聊。 |
+| [IM 前端](server/frontend/im-web/README.md) | 创建单聊、群聊，选择成员，收发消息和 @ Agent。 |
+| [IM 后端](server/backend/im/README.md) | Go 服务，用 MySQL 保存参与者、会话和消息，提供统一消息接口与消息事件。 |
+| [Trigger](server/backend/trigger/README.md) | 独立 Go 模块，接收 channel 消息并向订阅的 Agent 投递；首版来源为 IM 单聊和群聊。 |
 | [默认 Pi Agent](agents/pi/README.md) | 本地 Pi 已构建并通过会话验证；项目适配入口及 IM 对接尚未实现。 |
 
 IM 只承担聊天职责。Trigger 承担触发和路由职责。Pi 的底层库留在默认 Agent 边界内，IM 和 Trigger 不依赖 Pi。
+
+`client/adaptor/backend`、`client/adaptor/frontend` 和 `client/pi-adaptor` 当前仅保留目录占位，客户端与 Trigger 的 WebSocket 连接尚未实现。现有 Pi harness 源码仍位于 `agents/pi/`。
 
 本机服务统一使用 `./localdeploy/start.sh` 按 Trigger → IM → IM Web 启动，`./localdeploy/stop.sh` 按相反顺序停止。前端地址为 `http://127.0.0.1:5173/`，IM 为 `http://127.0.0.1:4180/`，Trigger 为 `http://127.0.0.1:4182/`；MySQL 独立运行。各服务可通过 `localdeploy/<服务名>/` 下的脚本单独管理，日志写入各自的 `locallog/<服务名>/`。
 
@@ -43,8 +53,8 @@ Agent 可以 @ 其他 Agent，协作行为由后续 skill 约束。Agent 身份�
 
 四个业务模块保留独立边界；默认 Pi 模块已经声明本地源码依赖，但没有项目运行入口。新增的 Pi 构建 workspace 和八个上游包只服务于默认 Pi Agent。目录结构不决定服务部署方式。
 
-Pi 的来源、提交、许可证、运行命令及验证边界见 [来源说明](agents/pi/upstream/README.md)。这是一份由本项目独立维护的本地精简 fork，不配置自动同步。依赖、模型目录数据和八包构建产物已就绪；本地 CLI 返回版本，真实 SDK 会话提交最小输入后正常返回缺少认证错误，并成功释放。未发出真实模型请求，模型调用成功与否未验证。IM 已实现 Handler、Service、MySQL Repository、账号注册、JWT 登录与七天滚动续期，并提供真实 HTTP 监听及本机持久化启动方式；IM 到 Trigger 的调用、统一 IM CLI 和 Agent 适配器仍未接入。启动命令见 [IM 说明](backend/im/README.md)。
+Pi 的来源、提交、许可证、运行命令及验证边界见 [来源说明](agents/pi/upstream/README.md)。这是一份由本项目独立维护的本地精简 fork，不配置自动同步。依赖、模型目录数据和八包构建产物已就绪；本地 CLI 返回版本，真实 SDK 会话提交最小输入后正常返回缺少认证错误，并成功释放。未发出真实模型请求，模型调用成功与否未验证。IM 已实现 Handler、Service、MySQL Repository、账号注册、JWT 登录与七天滚动续期，并提供真实 HTTP 监听及本机持久化启动方式；IM 到 Trigger 的调用、统一 IM CLI 和 Agent 适配器仍未接入。启动命令见 [IM 说明](server/backend/im/README.md)。
 
-在仓库根目录执行 `go build ./backend/im/...`、`go vet ./backend/im/...`、`go test -race ./backend/im/...` 验证 IM。MySQL 隔离验证入口见 [IM 说明](backend/im/README.md)。
+在仓库根目录执行 `go build ./server/backend/im/...`、`go vet ./server/backend/im/...`、`go test -race ./server/backend/im/...` 验证 IM。MySQL 隔离验证入口见 [IM 说明](server/backend/im/README.md)。
 
-Trigger 已实现健康检查、Agent 注册、批量订阅、单个退订、会话清理和消息接收接口，支持向配置的 HTTP Agent 适配入口投递。IM 调用链和实际 Agent 接收入口尚未接通，接口契约与验证命令见 [Trigger 说明](backend/trigger/README.md)。
+Trigger 已实现健康检查、Agent 注册、批量订阅、单个退订、会话清理和消息接收接口，支持向配置的 HTTP Agent 适配入口投递。IM 调用链和实际 Agent 接收入口尚未接通，接口契约与验证命令见 [Trigger 说明](server/backend/trigger/README.md)。

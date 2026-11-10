@@ -4,7 +4,7 @@
 
 单聊消息投递给发送者之外的 Agent 订阅者；群聊消息投递给被 @ 的 Agent 订阅者，没有 @ 时不投递。真人和 Agent 使用相同规则，Agent 可以 @ 其他 Agent，Trigger 不增加发送者类型、调用链层数或循环触发限制；这些协作约束由后续 skill 管理。
 
-通过各 harness 的适配入口向目标 Agent 投递任务。内置 [Pi Agent](../../agents/pi/README.md) 是默认接入对象，未来也可接入外部 Agent；Trigger 不导入 Pi 底层包，不承担模型和工具执行。这条唤起链路与 Agent 使用统一 IM CLI 读写消息相互独立，首版不引入 ACP。
+通过各 harness 的适配入口向目标 Agent 投递任务。内置 [Pi Agent](../../../agents/pi/README.md) 是默认接入对象，未来也可接入外部 Agent；Trigger 不导入 Pi 底层包，不承担模型和工具执行。这条唤起链路与 Agent 使用统一 IM CLI 读写消息相互独立，首版不引入 ACP。
 
 ## 代码分层与调用方式
 
@@ -101,7 +101,7 @@ curl http://127.0.0.1:4182/healthz
 ./localdeploy/trigger/stop.sh
 ```
 
-也可运行 `go run ./backend/trigger/cmd -config localdeploy/trigger/config.json`，或通过 `TRIGGER_CONFIG` 指定配置路径。SIGINT/SIGTERM 会先停止 HTTP、等待请求结束，再关闭数据库连接池。
+也可运行 `go run ./server/backend/trigger/cmd -config localdeploy/trigger/config.json`，或通过 `TRIGGER_CONFIG` 指定配置路径。SIGINT/SIGTERM 会先停止 HTTP、等待请求结束，再关闭数据库连接池。
 
 本机启动脚本构建 `localdeploy/trigger/trigger-server`，PID 保存在 `localdeploy/trigger/trigger.pid`，日志只写入 `locallog/trigger/trigger.log`。统一 `localdeploy/start.sh` 按 Trigger → IM → IM Web 启动，停止时顺序相反。`localdeploy/` 和 `locallog/` 被 Git 忽略，不随仓库分发；启停脚本不执行 SQL。
 
@@ -112,11 +112,11 @@ curl http://127.0.0.1:4182/healthz
 在仓库根目录运行：
 
 ```sh
-go build ./backend/trigger/...
-go vet ./backend/trigger/...
-go test -race ./backend/trigger/...
-TRIGGER_TEST_MYSQL=1 go test -race ./backend/trigger/...
-TRIGGER_TEST_CONFIG="$PWD/localdeploy/trigger/config.json" go test -race ./backend/trigger/...
+go build ./server/backend/trigger/...
+go vet ./server/backend/trigger/...
+go test -race ./server/backend/trigger/...
+TRIGGER_TEST_MYSQL=1 go test -race ./server/backend/trigger/...
+TRIGGER_TEST_CONFIG="$PWD/localdeploy/trigger/config.json" go test -race ./server/backend/trigger/...
 ```
 
 默认测试覆盖健康检查、缺少配置时启动失败，以及投递取消和重定向失败。`TRIGGER_TEST_MYSQL=1` 在仓库外创建一次性私有 MySQL 实例，关闭网络监听，通过真实 HTTP 和测试 Agent 接收端验证五个接口、批量回滚、并发 UUID 复用、退订、Agent 相互 @、消息字段传递、部分投递失败、未配置出口和连接池重开后的持久化；结束后关闭并清理该实例。
