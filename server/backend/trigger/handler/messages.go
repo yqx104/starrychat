@@ -13,13 +13,12 @@ func (h *Handler) receiveMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.ReceiveMessage(r.Context(), message)
 	if err != nil {
-		status, detail := errorDetail(err)
-		if detail.Code == "DELIVERY_UNAVAILABLE" || detail.Code == "DELIVERY_FAILED" {
-			writeJSON(w, status, MessageResponse{MessageResult: result, Error: &detail})
-		} else {
-			writeError(w, err)
-		}
+		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, MessageResponse{MessageResult: result})
+	status := http.StatusOK
+	if len(result.QueuedAgentIDs) > 0 {
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, MessageResponse{MessageResult: result})
 }

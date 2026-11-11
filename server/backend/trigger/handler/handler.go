@@ -58,10 +58,8 @@ func errorDetail(err error) (int, ErrorDetail) {
 	var business *model.ServiceError
 	if errors.As(err, &business) {
 		status := map[string]int{
-			"INVALID_REQUEST":      http.StatusBadRequest,
-			"NOT_FOUND":            http.StatusNotFound,
-			"DELIVERY_UNAVAILABLE": http.StatusServiceUnavailable,
-			"DELIVERY_FAILED":      http.StatusBadGateway,
+			"INVALID_REQUEST": http.StatusBadRequest,
+			"NOT_FOUND":       http.StatusNotFound,
 		}[business.Code]
 		if status != 0 {
 			return status, ErrorDetail{Code: business.Code, Message: business.Message}

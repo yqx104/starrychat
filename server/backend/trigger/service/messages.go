@@ -2,16 +2,14 @@ package service
 
 import (
 	"context"
-	"log/slog"
 	"slices"
-	"sync"
 
 	"starrychat/backend/trigger/common"
 	"starrychat/backend/trigger/model"
 )
 
 func (s *Service) ReceiveMessage(ctx context.Context, message model.Message) (model.MessageResult, error) {
-	result := model.MessageResult{DeliveredAgentIDs: []string{}, FailedAgentIDs: []string{}}
+	result := model.MessageResult{QueuedAgentIDs: []string{}}
 	if err := validateSource(message.Source); err != nil {
 		return result, err
 	}
@@ -39,34 +37,15 @@ func (s *Service) ReceiveMessage(ctx context.Context, message model.Message) (mo
 	if len(targets) == 0 {
 		return result, nil
 	}
-	if s.deliverer == nil {
-		for _, target := range targets {
-			result.FailedAgentIDs = append(result.FailedAgentIDs, target.AgentID)
-		}
-		return result, businessError("DELIVERY_UNAVAILABLE", "Agent delivery endpoint is not configured.")
+	items := make([]model.Delivery, 0, len(targets))
+	for _, target := range targets {
+		items = append(items, model.Delivery{AgentID: target.AgentID, ChannelID: target.ChannelID, Message: message})
 	}
-	// Read the subscriptions once, then release database resources before doing IO.
-	// Each recipient is attempted once; no background work or automatic retries.
-	errorsByTarget := make([]error, len(targets))
-	var pending sync.WaitGroup
-	for i, target := range targets {
-		pending.Go(func() {
-			errorsByTarget[i] = s.deliverer.Deliver(ctx, model.Delivery{
-				AgentID: target.AgentID, ChannelID: target.ChannelID, Message: message,
-			})
-		})
+	if err := s.repository.Enqueue(ctx, items); err != nil {
+		return result, err
 	}
-	pending.Wait()
-	for i, target := range targets {
-		if errorsByTarget[i] != nil {
-			result.FailedAgentIDs = append(result.FailedAgentIDs, target.AgentID)
-			slog.Warn("Agent delivery failed", "agent_id", target.AgentID, "message_id", message.MessageID, "error", errorsByTarget[i])
-		} else {
-			result.DeliveredAgentIDs = append(result.DeliveredAgentIDs, target.AgentID)
-		}
-	}
-	if len(result.FailedAgentIDs) > 0 {
-		return result, businessError("DELIVERY_FAILED", "One or more Agent deliveries failed.")
+	for _, target := range targets {
+		result.QueuedAgentIDs = append(result.QueuedAgentIDs, target.AgentID)
 	}
 	return result, nil
 }

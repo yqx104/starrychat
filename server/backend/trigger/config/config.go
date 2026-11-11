@@ -7,9 +7,9 @@ import (
 )
 
 type Config struct {
-	MySQLDSN         string `json:"mysql_dsn"`
-	Address          string `json:"address"`
-	AgentDeliveryURL string `json:"agent_delivery_url"`
+	MySQLDSN  string `json:"mysql_dsn"`
+	Address   string `json:"address"`
+	IMBaseURL string `json:"im_base_url"`
 }
 
 func Load(path string) (Config, error) {
@@ -23,6 +23,9 @@ func Load(path string) (Config, error) {
 	}
 	if c.MySQLDSN == "" {
 		return Config{}, errors.New("TRIGGER_CONFIG requires mysql_dsn")
+	}
+	if c.IMBaseURL == "" {
+		return Config{}, errors.New("TRIGGER_CONFIG requires im_base_url")
 	}
 	if c.Address == "" {
 		c.Address = "127.0.0.1:4182"

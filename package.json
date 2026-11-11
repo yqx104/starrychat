@@ -4,6 +4,7 @@
   "private": true,
   "workspaces": [
     "server/frontend/*",
+    "client/adaptor/*",
     "agents/*",
     "agents/pi/upstream",
     "agents/pi/upstream/packages/schema",

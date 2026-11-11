@@ -21,7 +21,6 @@ type AgentResponse struct {
 
 type MessageResponse struct {
 	model.MessageResult
-	Error *ErrorDetail `json:"error,omitempty"`
 }
 
 type HealthResponse struct {

@@ -56,9 +56,8 @@ type Delivery struct {
 }
 
 type MessageResult struct {
-	ChannelID         string   `json:"channel_id,omitempty"`
-	DeliveredAgentIDs []string `json:"delivered_agent_ids"`
-	FailedAgentIDs    []string `json:"failed_agent_ids"`
+	ChannelID      string   `json:"channel_id,omitempty"`
+	QueuedAgentIDs []string `json:"queued_agent_ids"`
 }
 
 type ServiceError struct {

@@ -34,7 +34,7 @@ func TestMySQLHealthLifecycle(t *testing.T) {
 	if err := store.CheckSchema(ctx); err != nil {
 		t.Fatalf("configured schema is not ready: %v", err)
 	}
-	server := httptest.NewServer(handler.New(service.New(store, nil)))
+	server := httptest.NewServer(handler.New(service.New(store)))
 	defer server.Close()
 	client := &http.Client{Timeout: 5 * time.Second}
 	check := func(want int) {

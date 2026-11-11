@@ -10,13 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"starrychat/backend/trigger/common"
-	"starrychat/backend/trigger/delivery"
 	"starrychat/backend/trigger/handler"
 	"starrychat/backend/trigger/model"
 	"starrychat/backend/trigger/repository"
@@ -72,45 +70,6 @@ func requestJSON[T any](t *testing.T, base, method, path string, body any, want 
 	return result
 }
 
-type agentReceiver struct {
-	mu         sync.Mutex
-	deliveries []model.Delivery
-	failing    string
-}
-
-func (r *agentReceiver) ServeHTTP(w http.ResponseWriter, request *http.Request) {
-	var message model.Delivery
-	if request.Method != http.MethodPost || request.Header.Get("Content-Type") != "application/json" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	if err := json.NewDecoder(request.Body).Decode(&message); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	r.mu.Lock()
-	r.deliveries = append(r.deliveries, message)
-	fails := message.AgentID == r.failing
-	r.mu.Unlock()
-	if fails {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (r *agentReceiver) reset(failing string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.deliveries, r.failing = nil, failing
-}
-
-func (r *agentReceiver) received() []model.Delivery {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Clone(r.deliveries)
-}
-
 func TestTriggerAPI(t *testing.T) {
 	instance := startMySQL(t)
 	if output, err := instance.query("CREATE DATABASE trigger_api_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin", ""); err != nil {
@@ -129,10 +88,7 @@ func TestTriggerAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	receiver := &agentReceiver{}
-	adapter := httptest.NewServer(receiver)
-	t.Cleanup(adapter.Close)
-	svc := service.New(store, delivery.NewHTTP(adapter.URL))
+	svc := service.New(store)
 	api := httptest.NewServer(handler.New(svc))
 	t.Cleanup(api.Close)
 	agents := []string{newID(t), newID(t), newID(t)}
@@ -156,6 +112,13 @@ func TestTriggerAPI(t *testing.T) {
 	send := func(t *testing.T, msg model.Message, status int) handler.MessageResponse {
 		t.Helper()
 		return requestJSON[handler.MessageResponse](t, api.URL, "POST", "/messages", msg, status)
+	}
+	checkDeliveryCount := func(t *testing.T, channelID string, want int) {
+		t.Helper()
+		count, err := instance.query("SELECT COUNT(*) FROM deliveries WHERE channel_id='"+channelID+"'", "trigger_api_test")
+		if err != nil || count != fmt.Sprint(want) {
+			t.Fatalf("delivery count = %s, want %d: %v", count, want, err)
+		}
 	}
 
 	t.Run("registration_preserves_original_timestamp", func(t *testing.T) {
@@ -255,87 +218,100 @@ func TestTriggerAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("direct_delivery_preserves_message_and_does_not_echo_sender", func(t *testing.T) {
-		receiver.reset("")
+	t.Run("direct_queue_preserves_message_deduplicates_and_does_not_echo_sender", func(t *testing.T) {
 		src := source(model.IMDirect)
 		sub := subscribe(t, src, agents[0])
 		msg := message(src)
 		quote := newID(t)
 		msg.QuotedMessageID = &quote
-		result := send(t, msg, 200)
-		if !reflect.DeepEqual(result.DeliveredAgentIDs, agents[:1]) || len(result.FailedAgentIDs) != 0 {
+		result := send(t, msg, 202)
+		if !reflect.DeepEqual(result.QueuedAgentIDs, agents[:1]) || result.ChannelID != sub.ChannelID {
 			t.Fatalf("direct targets: %+v", result)
 		}
-		received := receiver.received()
-		if len(received) != 1 || received[0].AgentID != agents[0] || received[0].ChannelID != sub.ChannelID || !reflect.DeepEqual(received[0].Message, msg) {
-			t.Fatalf("wrong delivery envelope: %+v", received)
+		item, err := store.NextDelivery(t.Context(), agents[0], sub.ChannelID)
+		if err != nil || item.AgentID != agents[0] || item.ChannelID != sub.ChannelID || !reflect.DeepEqual(item.Message, msg) {
+			t.Fatalf("wrong queued envelope: %+v %v", item, err)
 		}
-		// The adapter owns message_id deduplication; Trigger does not claim exactly-once delivery.
-		send(t, msg, 200)
-		if len(receiver.received()) != 2 {
-			t.Fatal("message retry was silently discarded")
-		}
+		send(t, msg, 202)
+		checkDeliveryCount(t, sub.ChannelID, 1)
+		msg.MessageID = newID(t)
 		msg.SenderID, msg.SenderKind = agents[0], "agent"
-		if result := send(t, msg, 200); len(result.DeliveredAgentIDs) != 0 || len(receiver.received()) != 2 {
+		if result := send(t, msg, 200); result.QueuedAgentIDs == nil || len(result.QueuedAgentIDs) != 0 {
 			t.Fatal("direct reply echoed back to its sender")
 		}
+		checkDeliveryCount(t, sub.ChannelID, 1)
 	})
 
 	t.Run("agent_mentions_trigger_subscribers_without_sender_restrictions", func(t *testing.T) {
-		receiver.reset("")
 		src := source(model.IMGroup)
-		subscribe(t, src, agents[0], agents[1])
+		sub := subscribe(t, src, agents[0], agents[1])
 		msg := message(src)
 		msg.SenderID, msg.SenderKind = agents[0], "agent"
 		msg.MentionedAgentIDs = []string{agents[1], agents[1], agents[2]}
-		result := send(t, msg, 200)
-		if !reflect.DeepEqual(result.DeliveredAgentIDs, agents[1:2]) || len(receiver.received()) != 1 {
+		result := send(t, msg, 202)
+		if !reflect.DeepEqual(result.QueuedAgentIDs, agents[1:2]) {
 			t.Fatalf("Agent-to-Agent targets or duplicate mentions: %+v", result)
 		}
+		checkDeliveryCount(t, sub.ChannelID, 1)
+		msg.MessageID = newID(t)
 		msg.MentionedAgentIDs = []string{agents[0]}
-		if result := send(t, msg, 200); !reflect.DeepEqual(result.DeliveredAgentIDs, agents[:1]) {
+		if result := send(t, msg, 202); !reflect.DeepEqual(result.QueuedAgentIDs, agents[:1]) {
 			t.Fatalf("group sender was additionally restricted: %+v", result)
 		}
+		msg.MessageID = newID(t)
 		msg.MentionedAgentIDs = nil
-		if result := send(t, msg, 200); len(result.DeliveredAgentIDs) != 0 || len(receiver.received()) != 2 {
+		if result := send(t, msg, 200); len(result.QueuedAgentIDs) != 0 {
 			t.Fatal("group without mentions dispatched")
 		}
 		requestJSON[struct{}](t, api.URL, "DELETE", path(src)+"/agents/"+agents[1], nil, 204)
 		msg.MentionedAgentIDs = []string{agents[1]}
-		if result := send(t, msg, 200); len(result.DeliveredAgentIDs) != 0 {
+		if result := send(t, msg, 200); len(result.QueuedAgentIDs) != 0 {
 			t.Fatal("removed member still received a message")
 		}
-		if result := send(t, message(source(model.IMGroup)), 200); len(result.DeliveredAgentIDs) != 0 {
+		if result := send(t, message(source(model.IMGroup)), 200); len(result.QueuedAgentIDs) != 0 {
 			t.Fatal("unsubscribed conversation dispatched")
 		}
+		checkDeliveryCount(t, sub.ChannelID, 2)
 	})
 
-	t.Run("partial_delivery_failure_reports_each_recipient", func(t *testing.T) {
-		receiver.reset(agents[1])
-		defer receiver.reset("")
+	t.Run("queues_all_recipients_while_offline", func(t *testing.T) {
 		src := source(model.IMGroup)
-		subscribe(t, src, agents[0], agents[1])
+		sub := subscribe(t, src, agents[0], agents[1])
 		msg := message(src)
 		msg.MentionedAgentIDs = agents[:2]
-		result := send(t, msg, 502)
-		if result.Error == nil || result.Error.Code != "DELIVERY_FAILED" || !reflect.DeepEqual(result.DeliveredAgentIDs, agents[:1]) || !reflect.DeepEqual(result.FailedAgentIDs, agents[1:2]) {
-			t.Fatalf("partial delivery not reported accurately: %+v", result)
+		result := send(t, msg, 202)
+		if !reflect.DeepEqual(result.QueuedAgentIDs, agents[:2]) {
+			t.Fatalf("offline recipients were not queued: %+v", result)
 		}
-		if len(receiver.received()) != 2 {
-			t.Fatal("unexpected automatic retry or unattempted recipient")
+		checkDeliveryCount(t, sub.ChannelID, 2)
+		for _, agentID := range agents[:2] {
+			item, err := store.NextDelivery(t.Context(), agentID, sub.ChannelID)
+			if err != nil || !reflect.DeepEqual(item.Message, msg) {
+				t.Fatalf("missing recipient message: %+v %v", item, err)
+			}
 		}
 	})
 
-	t.Run("missing_delivery_endpoint_never_reports_delivery_success", func(t *testing.T) {
-		unconfigured := httptest.NewServer(handler.New(service.New(store, nil)))
-		defer unconfigured.Close()
-		src := source(model.IMDirect)
-		subscribe(t, src, agents[0])
-		result := requestJSON[handler.MessageResponse](t, unconfigured.URL, "POST", "/messages", message(src), 503)
-		if result.Error == nil || result.Error.Code != "DELIVERY_UNAVAILABLE" || len(result.DeliveredAgentIDs) != 0 || !reflect.DeepEqual(result.FailedAgentIDs, agents[:1]) {
-			t.Fatalf("unconfigured delivery result: %+v", result)
+	t.Run("enqueue_failure_rolls_back_all_recipients", func(t *testing.T) {
+		src := source(model.IMGroup)
+		sub := subscribe(t, src, agents[0], agents[1])
+		// Fail the second recipient's insert in this isolated test database.
+		statement := "CREATE TRIGGER fail_delivery BEFORE INSERT ON deliveries FOR EACH ROW SET NEW.message_id=IF(NEW.agent_id='" + agents[1] + "', NULL, NEW.message_id)"
+		if output, err := instance.query(statement, "trigger_api_test"); err != nil {
+			t.Fatalf("install insert failure: %v %s", err, output)
 		}
-		requestJSON[handler.MessageResponse](t, unconfigured.URL, "POST", "/messages", message(source(model.IMGroup)), 200)
+		t.Cleanup(func() {
+			if _, err := instance.query("DROP TRIGGER fail_delivery", "trigger_api_test"); err != nil {
+				t.Error(err)
+			}
+		})
+		msg := message(src)
+		msg.MentionedAgentIDs = agents[:2]
+		result := requestJSON[handler.ErrorResponse](t, api.URL, "POST", "/messages", msg, 500)
+		if result.Error.Code != "INTERNAL_ERROR" {
+			t.Fatalf("enqueue failure result: %+v", result)
+		}
+		checkDeliveryCount(t, sub.ChannelID, 0)
 	})
 
 	t.Run("subscriptions_survive_a_new_repository_and_service", func(t *testing.T) {
@@ -346,7 +322,7 @@ func TestTriggerAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer reopened.Close()
-		after, err := service.New(reopened, nil).Subscribe(t.Context(), model.SubscribeInput{Source: src, AgentIDs: agents[:1]})
+		after, err := service.New(reopened).Subscribe(t.Context(), model.SubscribeInput{Source: src, AgentIDs: agents[:1]})
 		if err != nil || !reflect.DeepEqual(before, after) {
 			t.Fatalf("subscription changed after reopening: %+v %v", after, err)
 		}

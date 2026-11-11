@@ -72,6 +72,7 @@ func (r *Repository) CheckSchema(ctx context.Context) error {
 	for _, query := range []string{
 		"SELECT agent_id, created_at FROM agents LIMIT 0",
 		"SELECT agent_id, channel_id, channel_type, conversation_id, created_at FROM channels LIMIT 0",
+		"SELECT id, agent_id, channel_id, message_id, message_seq, payload, created_at, acked_at FROM deliveries LIMIT 0",
 	} {
 		rows, err := r.pool.QueryContext(ctx, query)
 		if err != nil {

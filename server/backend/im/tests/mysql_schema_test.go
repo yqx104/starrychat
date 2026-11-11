@@ -120,7 +120,7 @@ func TestMySQLSchema(t *testing.T) {
 			t.Fatalf("trigger insert: %v: %s", err, output)
 		}
 		output, err := instance.query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND column_name='agent_id' AND column_type='char(36)' AND collation_name='ascii_bin'", "trigger_schema_test")
-		if err != nil || output != "2" {
+		if err != nil || output != "3" {
 			t.Fatalf("trigger columns: %v %s", err, output)
 		}
 		if _, err := instance.query("INSERT INTO agents VALUES ('1',1)", "trigger_schema_test"); err == nil {
