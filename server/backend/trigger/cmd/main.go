@@ -15,6 +15,7 @@ import (
 	"starrychat/backend/trigger/config"
 	"starrychat/backend/trigger/connections"
 	"starrychat/backend/trigger/handler"
+	"starrychat/backend/trigger/imclient"
 	"starrychat/backend/trigger/repository"
 	"starrychat/backend/trigger/service"
 )
@@ -57,7 +58,7 @@ func run(ctx context.Context, path string) error {
 		return errors.New("HTTP 地址无法监听，请检查配置和端口占用。")
 	}
 	svc := service.New(store)
-	sockets := connections.New(store, c.IMBaseURL)
+	sockets := connections.New(store, imclient.New(c.IMBaseURL))
 	defer sockets.Close()
 	mux := http.NewServeMux()
 	mux.Handle("GET /agent-connections", sockets)

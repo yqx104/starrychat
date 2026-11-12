@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 	"starrychat/backend/trigger/connections"
 	"starrychat/backend/trigger/handler"
+	"starrychat/backend/trigger/imclient"
 	"starrychat/backend/trigger/model"
 	"starrychat/backend/trigger/repository"
 	"starrychat/backend/trigger/service"
@@ -165,7 +166,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sockets := connections.New(store, imURL)
+		sockets := connections.New(store, imclient.New(imURL))
 		mux := http.NewServeMux()
 		mux.Handle("GET /agent-connections", sockets)
 		mux.Handle("/", handler.New(service.New(store)))
@@ -313,7 +314,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"participant": map[string]string{"participant_id": shortID, "kind": "agent"}})
 	}))
 	defer shortIM.Close()
-	shortSockets := connections.New(store, shortIM.URL)
+	shortSockets := connections.New(store, imclient.New(shortIM.URL))
 	shortServer := httptest.NewServer(shortSockets)
 	defer shortServer.Close()
 	defer shortSockets.Close()

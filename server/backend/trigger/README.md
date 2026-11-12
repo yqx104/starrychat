@@ -16,6 +16,7 @@ handler/      HTTP 路由与 JSON 请求/响应
 service/      注册、订阅事务、接收者选择与消息入队
 repository/   MySQL 连接池、SQL 与表结构就绪检查
 connections/  Agent WebSocket 鉴权、连接、投递与 ACK
+imclient/     调用 IM 身份接口、解析身份与续签凭据
 common/       模块内可复用的 UUIDv7 生成与格式判断
 model/        Agent、Channel、请求与消息事件等共享数据类型
 config/       私有运行配置
@@ -23,7 +24,7 @@ sql/          当前完整表结构
 tests/        本服务的测试
 ```
 
-普通 HTTP 接口依赖方向为 `handler → service → repository`；WS 投递由 `connections → repository` 读取待投递记录并处理 ACK。共享类型放在 `model`，通用方法放在 `common`。Trigger 保持独立 Go 模块，不导入 IM 的业务包。
+普通 HTTP 接口依赖方向为 `handler → service → repository`；WS 握手由 `connections → imclient` 调用 IM 的 `GET /auth/me`，投递由 `connections → repository` 读取待投递记录并处理 ACK。`cmd` 创建并注入 `imclient`，HTTP 请求超时为五秒，不跟随重定向。共享类型放在 `model`，通用方法放在 `common`。Trigger 保持独立 Go 模块，不导入 IM 的业务包。
 
 当前上游只有同机部署的 IM，使用本机 HTTP/JSON 同步调用，默认监听 `127.0.0.1:4182`。将 IM 视为可信调用方，不增加 JWT、签名、调用方权限中间件，也不重复查询 IM 的用户归属、会话成员关系。IM 负责这些检查；Trigger 负责自己的注册和订阅状态、唯一性、事务与数据库错误处理。
 
@@ -120,7 +121,7 @@ TRIGGER_TEST_MYSQL=1 go test -race ./server/backend/trigger/...
 TRIGGER_TEST_CONFIG="$PWD/localdeploy/trigger/config.json" go test -race ./server/backend/trigger/...
 ```
 
-默认测试覆盖健康检查、缺少配置或 `im_base_url` 时启动失败。`TRIGGER_TEST_MYSQL=1` 在仓库外创建一次性私有 MySQL 实例，关闭网络监听，通过真实 HTTP 和数据库验证五个接口、批量回滚、并发 UUID 复用、退订、Agent 相互 @、消息字段保存、入队去重、离线入队、写入失败整批回滚和连接池重开后的持久化；结束后关闭并清理该实例。
+默认测试覆盖健康检查、缺少配置或 `im_base_url` 时启动失败，以及 IM 客户端的 Bearer 传递、续签凭据解析、握手鉴权失败状态码、禁止重定向和请求截止时间。`TRIGGER_TEST_MYSQL=1` 在仓库外创建一次性私有 MySQL 实例，关闭网络监听，通过真实 HTTP 和数据库验证五个接口、批量回滚、并发 UUID 复用、退订、Agent 相互 @、消息字段保存、入队去重、离线入队、写入失败整批回滚和连接池重开后的持久化；结束后关闭并清理该实例。
 
 同一测试开关还运行 `TestAdaptorEndToEnd`：启动真实 IM 和 Node adaptor，验证账号接入、WS 鉴权、重复连接拒绝、SQLite 落盘 ACK、重复投递、两端重启、自动重连补发以及凭据到期关闭。运行前在仓库根安装 npm 依赖；测试不访问业务库，不发出模型请求。
 

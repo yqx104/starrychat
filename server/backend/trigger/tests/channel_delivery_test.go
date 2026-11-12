@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"starrychat/backend/trigger/connections"
+	"starrychat/backend/trigger/imclient"
 	"starrychat/backend/trigger/model"
 	"starrychat/backend/trigger/repository"
 )
@@ -38,7 +39,7 @@ func TestChannelDeliveryOrderACKAndRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sockets := connections.New(store, im.URL)
+		sockets := connections.New(store, imclient.New(im.URL))
 		server := httptest.NewServer(sockets)
 		stop := func() { sockets.Close(); server.Close(); store.Close() }
 		t.Cleanup(stop)
