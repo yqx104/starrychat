@@ -59,7 +59,7 @@ func runMySQLConcurrencyTests(t *testing.T, instance *mysqlInstance) {
 		}
 		t.Cleanup(func() { _ = otherStore.Close() })
 		other := *f
-		other.handle = handler.New(service.New(otherStore))
+		other.handle = handler.New(service.New(otherStore, nil))
 		responses := parallelResponses(t, 32, func(ctx context.Context, i int) *httptest.ResponseRecorder {
 			target := f
 			if i%2 == 1 {

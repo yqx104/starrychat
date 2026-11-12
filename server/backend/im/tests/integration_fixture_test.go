@@ -91,7 +91,7 @@ func newIMFixture(t *testing.T, instance *mysqlInstance) *imFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.handle = handler.New(service.New(f.store))
+	f.handle = handler.New(service.New(f.store, nil))
 	return f
 }
 

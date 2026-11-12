@@ -25,7 +25,7 @@ func runMessageSequenceTests(t *testing.T, instance *mysqlInstance) {
 		}
 		defer store.Close()
 		other := *f
-		other.handle = handler.New(service.New(store))
+		other.handle = handler.New(service.New(store, nil))
 		responses := parallelResponses(t, 64, func(ctx context.Context, i int) *httptest.ResponseRecorder {
 			target, conversation := f, one
 			if i%2 == 1 {
@@ -81,7 +81,7 @@ func runMessageSequenceTests(t *testing.T, instance *mysqlInstance) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.handle = handler.New(service.New(f.store))
+		f.handle = handler.New(service.New(f.store, nil))
 		second := f.send(t, group.ConversationID, "After reopen", f.human)
 		equalValue(t, second.MessageSeq, int64(2))
 		// Reverse UUID and timestamp order: sequence alone determines pagination.

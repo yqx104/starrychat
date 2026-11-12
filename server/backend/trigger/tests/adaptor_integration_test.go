@@ -148,13 +148,16 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	if output, err := exec.CommandContext(t.Context(), "go", "build", "-o", imBinary, "../../im/cmd").CombinedOutput(); err != nil {
 		t.Fatalf("build IM: %v %s", err, output)
 	}
-	imConfig := writeConfig("im.json", map[string]any{"mysql_dsn": fmt.Sprintf("root@unix(%s)/adaptor_im?charset=utf8mb4", instance.socket), "address": "127.0.0.1:0", "insecure_local_http": true})
+	triggerListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { triggerListener.Close() })
+	imConfig := writeConfig("im.json", map[string]any{"mysql_dsn": fmt.Sprintf("root@unix(%s)/adaptor_im?charset=utf8mb4", instance.socket), "address": "127.0.0.1:0", "insecure_local_http": true, "trigger_base_url": "http://" + triggerListener.Addr().String()})
 	imURL, _ := startChild(t, exec.Command(imBinary, "-config", imConfig), "IM 已就绪：")
 	password := newID(t)
 	authJSON(t, imURL, "POST", "/auth/register", "", map[string]any{"username": "human", "password": password, "name": "Human", "kind": "human"}, 201)
 	humanToken := authJSON(t, imURL, "POST", "/auth/login", "", map[string]any{"username": "human", "password": password, "transport": "bearer"}, 200)["token"].(string)
-	agent := authJSON(t, imURL, "POST", "/agents", humanToken, map[string]any{"username": "agent", "password": password, "name": "Pi Agent"}, 201)["agent"].(map[string]any)
-	agentID := agent["participant_id"].(string)
 	dsn := fmt.Sprintf("root@unix(%s)/adaptor_trigger?charset=utf8mb4", instance.socket)
 	startTrigger := func(address string) (*repository.Repository, *connections.Server, *httptest.Server) {
 		t.Helper()
@@ -167,8 +170,10 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		mux.Handle("GET /agent-connections", sockets)
 		mux.Handle("/", handler.New(service.New(store)))
 		server := httptest.NewUnstartedServer(mux)
-		if address != "" {
-			server.Listener.Close()
+		server.Listener.Close()
+		if address == "" {
+			server.Listener = triggerListener
+		} else {
 			server.Listener, err = net.Listen("tcp", address)
 			if err != nil {
 				t.Fatal(err)
@@ -179,6 +184,11 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		return store, sockets, server
 	}
 	store, sockets, trigger := startTrigger("")
+	agent := authJSON(t, imURL, "POST", "/agents", humanToken, map[string]any{"username": "agent", "password": password, "name": "Pi Agent"}, 201)["agent"].(map[string]any)
+	agentID := agent["participant_id"].(string)
+	if _, err := store.GetAgent(t.Context(), agentID); err != nil {
+		t.Fatalf("Agent was not registered before Adaptor connected: %v", err)
+	}
 	triggerURL := trigger.URL
 	wsURL := "ws" + strings.TrimPrefix(triggerURL, "http") + "/agent-connections"
 	backend, err := filepath.Abs("../../../../client/adaptor/backend")

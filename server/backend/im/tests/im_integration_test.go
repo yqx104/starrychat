@@ -333,7 +333,7 @@ func runRemainingBusinessTests(t *testing.T, instance *mysqlInstance) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.handle = handler.New(service.New(f.store))
+		f.handle = handler.New(service.New(f.store, nil))
 		equalValue(t, apiJSON[handler.MessagePage](t, f, fmt.Sprintf("/conversations/%s/messages", group.ConversationID)).Messages, []model.Message{message})
 		equalValue(t, apiJSON[handler.ParticipantsResponse](t, f, "/participants").Participants, []model.Participant{f.human, f.alpha, f.beta, f.outsider})
 	})

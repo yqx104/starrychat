@@ -19,6 +19,7 @@ import (
 	"starrychat/backend/im/handler"
 	"starrychat/backend/im/repository"
 	"starrychat/backend/im/service"
+	"starrychat/backend/im/triggerclient"
 )
 
 func main() {
@@ -59,7 +60,7 @@ func run(ctx context.Context, path string, bind bool) error {
 	if err != nil {
 		return errors.New("MySQL 表结构不符合 sql/schema.sql；未启动 HTTP 监听。")
 	}
-	s := service.New(store)
+	s := service.New(store, triggerclient.New(c.TriggerBaseURL))
 	if bind {
 		return bindHuman(ctx, s)
 	}

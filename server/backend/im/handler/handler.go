@@ -130,7 +130,7 @@ func writeError(w http.ResponseWriter, err error) {
 	}
 	var serviceError *ServiceError
 	if errors.As(err, &serviceError) && serviceError != nil {
-		status := map[string]int{"INVALID_REQUEST": 400, "UNAUTHORIZED": 401, "NOT_FOUND": 404, "FORBIDDEN": 403, "CONFLICT": 409, "INVALID_OPERATION": 422}[serviceError.Code]
+		status := map[string]int{"INVALID_REQUEST": 400, "UNAUTHORIZED": 401, "NOT_FOUND": 404, "FORBIDDEN": 403, "CONFLICT": 409, "INVALID_OPERATION": 422, "TRIGGER_UNAVAILABLE": 503}[serviceError.Code]
 		if status != 0 {
 			writeFailure(w, status, serviceError.Code, serviceError.Message)
 			return

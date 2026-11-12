@@ -2,7 +2,7 @@
 
 TypeScript 后端使用 SQLite 保存接入的 IM Agent 和本机收件箱；React/Vite 前端通过同源 `/adaptor-api` 代理调用后端。每个启用的 Agent 有一条到 Trigger 的 WS/WSS 连接。浏览器关闭不会停止后端接收。
 
-本版完成账号接入、连接状态、启停与重新认证、消息落盘 ACK、去重和离线重连补发。所有收件记录保持 `pending`；`client/pi-adaptor` 的模型和工具执行尚未接入。IM 到 Trigger 的注册、订阅和消息同步仍需后续接入，当前投递入口为 Trigger 的内部 HTTP API。
+本版完成账号接入、连接状态、启停与重新认证、消息落盘 ACK、去重和离线重连补发。所有收件记录保持 `pending`；`client/pi-adaptor` 的模型和工具执行尚未接入。IM 创建 Agent 时已向 Trigger 登记，会话订阅和消息同步仍需后续接入，当前投递入口为 Trigger 的内部 HTTP API。
 
 ## 本机运行
 

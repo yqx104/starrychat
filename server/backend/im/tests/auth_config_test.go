@@ -64,6 +64,7 @@ func TestPrivateConfigurationValidation(t *testing.T) {
 	}
 	equalValue(t, c.SigningKeyFile, filepath.Join(dir, "signing.key"))
 	equalValue(t, c.Issuer, "yqx-im")
+	equalValue(t, c.TriggerBaseURL, "http://127.0.0.1:4182")
 	for _, source := range []string{`{}`, `{"mysql_dsn":"private","address":"0.0.0.0:4180","insecure_local_http":true}`, `{"mysql_dsn":"private","unknown":true}`, `{} {}`} {
 		if err := os.WriteFile(path, []byte(source), 0600); err != nil {
 			t.Fatal(err)
@@ -87,5 +88,40 @@ func TestPrivateConfigurationValidation(t *testing.T) {
 	}
 	if _, err := config.LoadOrCreateKey(link); err == nil {
 		t.Fatal("symlink accepted")
+	}
+}
+
+func TestTriggerBaseURLConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{"http://127.0.0.1:4182/", "http://127.0.0.1:4182"},
+		{"https://trigger.example.com/internal/", "https://trigger.example.com/internal"},
+		{"trigger.example.com", ""},
+		{"ws://127.0.0.1:4182", ""},
+		{"http:///agents", ""},
+		{"http://user:password@localhost:4182", ""},
+		{"http://localhost:4182?query=1", ""},
+		{"http://localhost:4182#fragment", ""},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			data, _ := json.Marshal(config.Config{MySQLDSN: "test-only", TriggerBaseURL: tc.input})
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := config.Load(path)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatal("invalid Trigger URL accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			equalValue(t, got.TriggerBaseURL, tc.want)
+		})
 	}
 }

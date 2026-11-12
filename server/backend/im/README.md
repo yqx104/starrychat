@@ -2,7 +2,7 @@
 
 独立 Go/MySQL 聊天服务。`handler/` 接收 HTTP，`service/` 检查业务规则并组织事务，`repository/` 执行 SQL；`common/` 提供 UUIDv7 生成和校验，`common/auth/` 处理 JWT 和账号格式校验，`config/` 读取私有运行配置，`model/` 保存共享类型。所有测试位于 `tests/`。参与者、会话、消息由后端统一生成小写标准 UUIDv7，数据库使用 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`，接口统一传字符串。支持多个真人，每个 Agent 固定属于创建它的真人；原有成员、引用、@、解散规则与所属范围一起校验。关联校验和响应组装由 Service 完成，Repository 只查询单表。
 
-IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。Trigger 已实现注册、订阅和消息接口，IM 到 Trigger 的调用、事件传输和统一 IM CLI 尚未实现。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
+IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。创建 Agent 时通过 `triggerclient/` 调用 Trigger 注册接口；会话订阅、消息同步和统一 IM CLI 尚未接入。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
 
 ## 标识与消息顺序
 
@@ -65,7 +65,7 @@ locallog/
 go run ./server/backend/im/cmd -config localdeploy/im/config.json
 ```
 
-也可用 `IM_CONFIG` 指定配置文件。配置字段是 `mysql_dsn`、`address`、`signing_key_file`、`insecure_local_http`、`issuer`、`audience`。默认地址 `127.0.0.1:4180`，相对密钥路径基于配置文件所在目录。HTTP 开发模式只允许环回 IP 监听；非本地 Cookie 请求须通过 HTTPS。入口检查连接及五张表后才开始监听，收到 SIGINT/SIGTERM 时先停止 HTTP 请求，再关闭连接池；缺少配置或表结构不符会明确失败，不隐式设置调用者。
+也可用 `IM_CONFIG` 指定配置文件。配置字段是 `mysql_dsn`、`address`、`trigger_base_url`、`signing_key_file`、`insecure_local_http`、`issuer`、`audience`。默认监听地址 `127.0.0.1:4180`，`trigger_base_url` 默认 `http://127.0.0.1:4182`，可配置其他 HTTP/HTTPS 地址。相对密钥路径基于配置文件所在目录。HTTP 开发模式只允许环回 IP 监听；非本地 Cookie 请求须通过 HTTPS。入口检查连接及五张表后才开始监听，收到 SIGINT/SIGTERM 时先停止 HTTP 请求，再关闭连接池；缺少配置或表结构不符会明确失败，不隐式设置调用者。
 
 需要前端隔离联调时，先独立准备测试库及其应用账号，再创建 `localdeploy/im/browser/config.json`，设置监听地址 `127.0.0.1:4181`、独立的 JWT 密钥和 issuer。日志写入 `locallog/im/browser/im.log`；以下命令只管理这份配置对应的 IM 进程，不创建或清理测试数据库：
 
@@ -113,6 +113,10 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 | `PATCH /agents/:participant_id` | 非空 `{name?,username?,password?}` | `200 {agent: AgentAccount}`，仅 owner 可修改 |
 
 `AgentAccount` 只有 `participant_id,kind,name,username,owner_participant_id,created_at`，不含密码。创建、更新不切换当前身份，沿用七天续期；重设密码不会即时撤销已签发 JWT。用户名仍全局唯一，更新显示名和凭据在同一事务中完成。
+
+`POST /agents` 和 `POST /auth/register` 的 Agent 分支都会在本地账号事务提交前调用 Trigger `PUT /agents/{participant_id}`，只发送身份 ID，不发送账号密码或 Token。HTTP 调用最多等待五秒且不跟随重定向；只有 Trigger 返回 `200` 并确认同一 Agent ID 才提交 IM 事务。调用失败返回 `503 TRIGGER_UNAVAILABLE`，回滚本次 IM 参与者和账号记录，可使用相同用户名重试。真人注册和 Agent 更新不调用 Trigger，既有 Agent 不自动补登记。
+
+这是同步登记，不是跨数据库原子事务：若 Trigger 已登记但响应丢失，或随后 IM 提交失败，Trigger 可能保留一个没有对应 IM 账号的身份 ID。Trigger 登记接口幂等；此类孤立记录的对账清理尚未实现。
 
 `GET /participants` 的响应格式不变。真人只能看到自己和自己的 Agent；Agent 只能看到所属真人及同主 Agent。创建单聊、拉群、加人、移除和 @ 也校验相同 owner。会话列表及历史仍要求成员身份，不提供跨真人共享群。已有 `/auth/register` 的 agent 分支执行同样的 owner 校验。
 

@@ -10,9 +10,18 @@ import (
 	"starrychat/backend/im/repository"
 )
 
-type Service struct{ repository *repository.Repository }
+type AgentRegistrar interface {
+	RegisterAgent(context.Context, string) error
+}
 
-func New(repository *repository.Repository) *Service { return &Service{repository: repository} }
+type Service struct {
+	repository *repository.Repository
+	trigger    AgentRegistrar
+}
+
+func New(repository *repository.Repository, trigger AgentRegistrar) *Service {
+	return &Service{repository: repository, trigger: trigger}
+}
 
 func transaction[T any](ctx context.Context, s *Service, options *sql.TxOptions, run func(*repository.Queries) (T, error)) (T, error) {
 	var value T

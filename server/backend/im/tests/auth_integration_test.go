@@ -22,6 +22,10 @@ import (
 
 const testPassword = "only-isolated-tests-123"
 
+type successfulAgentRegistrar struct{}
+
+func (successfulAgentRegistrar) RegisterAgent(context.Context, string) error { return nil }
+
 type authFixture struct {
 	*imFixture
 	api    *handler.API
@@ -47,7 +51,7 @@ func newAuthFixture(t *testing.T, instance *mysqlInstance) *authFixture {
 	f.exec(t, "DELETE FROM participant_accounts")
 	f.exec(t, "DELETE FROM participants")
 	f.tokens, f.clock, _ = testTokens(t)
-	s := service.New(f.store)
+	s := service.New(f.store, successfulAgentRegistrar{})
 	f.api = handler.NewAPI(s, s, f.tokens, handler.APIOptions{InsecureLocalHTTP: true})
 	return f
 }
@@ -322,7 +326,7 @@ func TestMySQLAuthentication(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer other.Close()
-		services := []*service.Service{service.New(f.store), service.New(other)}
+		services := []*service.Service{service.New(f.store, nil), service.New(other, nil)}
 		var workers sync.WaitGroup
 		results := make(chan error, 2)
 		start := make(chan struct{})
@@ -358,12 +362,12 @@ func TestMySQLAuthentication(t *testing.T) {
 		attempt["participant_id"] = p.ParticipantID
 		assertError(t, f.call("POST", "/auth/register", attempt), 400, "INVALID_REQUEST")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts"), int64(0))
-		bound, err := service.New(f.store).BindHumanAccount(t.Context(), p.ParticipantID, "owner", testPassword)
+		bound, err := service.New(f.store, nil).BindHumanAccount(t.Context(), p.ParticipantID, "owner", testPassword)
 		if err != nil {
 			t.Fatal(err)
 		}
 		equalValue(t, bound, p)
-		if _, err := service.New(f.store).BindHumanAccount(t.Context(), p.ParticipantID, "other", testPassword); err == nil {
+		if _, err := service.New(f.store, nil).BindHumanAccount(t.Context(), p.ParticipantID, "other", testPassword); err == nil {
 			t.Fatal("account rebound")
 		}
 		logged := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("owner", "bearer")), 200)

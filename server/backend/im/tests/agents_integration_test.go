@@ -240,7 +240,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer other.Close()
-		services := []*service.Service{service.New(f.store), service.New(other)}
+		services := []*service.Service{service.New(f.store, successfulAgentRegistrar{}), service.New(other, successfulAgentRegistrar{})}
 		owners := []loginResult{one, two}
 		var workers sync.WaitGroup
 		results := make(chan error, 2)
@@ -300,7 +300,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := service.New(f.store)
+		s := service.New(f.store, nil)
 		if _, err := s.BindHumanAccount(t.Context(), "", "bound", testPassword); err == nil {
 			t.Fatal("implicit human binding accepted")
 		}

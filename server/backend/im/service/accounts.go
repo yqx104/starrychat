@@ -46,7 +46,16 @@ func (s *Service) Register(ctx context.Context, caller model.RequestContext, inp
 			return model.Participant{}, err
 		}
 		err = q.InsertAccount(ctx, model.ParticipantAccount{ParticipantID: participant.ParticipantID, Kind: input.Kind, OwnerParticipantID: ownerID, Username: input.Username, Password: input.Password, CreatedAt: now})
-		return participant, err
+		if err != nil {
+			return model.Participant{}, err
+		}
+		if input.Kind == model.Agent {
+			// Register before committing so a Trigger failure rolls back the new IM account.
+			if s.trigger == nil || s.trigger.RegisterAgent(ctx, participant.ParticipantID) != nil {
+				return model.Participant{}, businessError("TRIGGER_UNAVAILABLE", "Unable to register Agent with Trigger. Please retry.")
+			}
+		}
+		return participant, nil
 	})
 	return participant, accountError(err)
 }

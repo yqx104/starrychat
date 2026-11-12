@@ -7,13 +7,16 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
 	MySQLDSN          string `json:"mysql_dsn"`
 	Address           string `json:"address"`
+	TriggerBaseURL    string `json:"trigger_base_url"`
 	SigningKeyFile    string `json:"signing_key_file"`
 	InsecureLocalHTTP bool   `json:"insecure_local_http"`
 	Issuer            string `json:"issuer"`
@@ -37,6 +40,15 @@ func Load(path string) (Config, error) {
 	if c.MySQLDSN == "" {
 		return Config{}, errors.New("IM_CONFIG requires mysql_dsn")
 	}
+	if c.TriggerBaseURL == "" {
+		c.TriggerBaseURL = "http://127.0.0.1:4182"
+	}
+	triggerURL, err := url.Parse(c.TriggerBaseURL)
+	if err != nil || (triggerURL.Scheme != "http" && triggerURL.Scheme != "https") || triggerURL.Hostname() == "" ||
+		triggerURL.User != nil || triggerURL.RawQuery != "" || triggerURL.ForceQuery || triggerURL.Fragment != "" {
+		return Config{}, errors.New("invalid Trigger base URL")
+	}
+	c.TriggerBaseURL = strings.TrimRight(c.TriggerBaseURL, "/")
 	if c.Address == "" {
 		c.Address = "127.0.0.1:4180"
 	}
