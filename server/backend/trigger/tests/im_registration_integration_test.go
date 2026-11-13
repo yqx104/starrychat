@@ -84,17 +84,22 @@ func TestIMRegistersAgentsWithTrigger(t *testing.T) {
 			if route.path == "/auth/register" {
 				input["kind"] = "agent"
 			}
-			// An unavailable Trigger must not leave an IM account that blocks a retry.
+			// Creation commits locally while Trigger is unavailable; the worker retries.
 			unavailable.Store(true)
-			failed := authJSON(t, imURL, "POST", route.path, token, input, 503)
-			if failed["error"].(map[string]any)["code"] != "TRIGGER_UNAVAILABLE" {
-				t.Fatal("registration failure was not reported")
-			}
-			queryCount(t, "SELECT COUNT(*) FROM participant_accounts WHERE username='"+route.username+"'", "registration_im", "0")
-			queryCount(t, "SELECT COUNT(*) FROM participants WHERE kind='agent'", "registration_im", strconv.Itoa(count))
-			unavailable.Store(false)
 			created := authJSON(t, imURL, "POST", route.path, token, input, 201)[route.field].(map[string]any)
 			id := created["participant_id"].(string)
+			queryCount(t, "SELECT COUNT(*) FROM participant_accounts WHERE username='"+route.username+"'", "registration_im", "1")
+			queryCount(t, "SELECT COUNT(*) FROM participants WHERE kind='agent'", "registration_im", strconv.Itoa(count+1))
+			eventually(t, "registration retained for retry", func() bool {
+				pending, err := instance.query("SELECT COUNT(*) FROM trigger_outbox WHERE operation='register_agent' AND attempts>0", "registration_im")
+				return err == nil && pending == "1"
+			})
+			unavailable.Store(false)
+			eventually(t, "Agent registered without a WS connection", func() bool {
+				_, err := store.GetAgent(t.Context(), id)
+				pending, queryErr := instance.query("SELECT COUNT(*) FROM trigger_outbox", "registration_im")
+				return err == nil && queryErr == nil && pending == "0"
+			})
 			registered, err := store.GetAgent(t.Context(), id)
 			if err != nil || registered.AgentID != id {
 				t.Fatalf("new IM Agent missing from Trigger before any WS connection: %v", err)

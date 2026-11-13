@@ -24,7 +24,7 @@ sql/          当前完整表结构
 tests/        本服务的测试
 ```
 
-普通 HTTP 接口依赖方向为 `handler → service → repository`；WS 握手由 `connections → imclient` 调用 IM 的 `GET /auth/me`，投递由 `connections → repository` 读取待投递记录并处理 ACK。`cmd` 创建并注入 `imclient`，HTTP 请求超时为五秒，不跟随重定向。共享类型放在 `model`，通用方法放在 `common`。Trigger 保持独立 Go 模块，不导入 IM 的业务包。
+普通 HTTP 接口依赖方向为 `handler → service → repository`；WS 握手由 `connections → imclient` 调用 IM 的 `GET /auth/me`，投递由 `connections → repository` 读取待投递记录并处理 ACK。`cmd` 创建并注入 `imclient`，HTTP 请求超时为五秒，不跟随重定向。共享类型放在 `model`，通用方法放在 `common`。Trigger 保持独立 Go 模块，生产代码不导入 IM 的业务包；跨服务集成测试通过仓库的 `go.work` 组装真实服务。
 
 当前上游只有同机部署的 IM，使用本机 HTTP/JSON 同步调用，默认监听 `127.0.0.1:4182`。将 IM 视为可信调用方，不增加 JWT、签名、调用方权限中间件，也不重复查询 IM 的用户归属、会话成员关系。IM 负责这些检查；Trigger 负责自己的注册和订阅状态、唯一性、事务与数据库错误处理。
 
@@ -84,11 +84,11 @@ Agent 表先只登记身份。显示名、所属真人、登录账号和密码�
 
 当前按单个 Trigger 实例部署，service 使用同一把锁串行化订阅与退订，事务内查询或生成共享 UUID。上述唯一索引只约束单个 Agent 的重复订阅，不能替代实例之间的协调；当前实现不支持多个 Trigger 进程同时写入同一库。最后一条订阅删除后不再保留该映射，重新订阅时生成新的 channel ID。订阅前由 Trigger 确认 Agent 已注册；来源会话、归属及成员身份由可信上游 IM 校验，不建立跨库外键。
 
-## 后续接口对接
+## IM 接口对接
 
-IM 是创建 Agent 的入口。创建 Agent 时已调用 `PUT /agents/{agent_id}` 登记，登记失败会回滚本次 IM 账号创建。后续仍需接入：创建单聊、创建群聊或往群里添加 Agent 时创建订阅；移除 Agent 和解散群聊时调用对应删除接口；消息落库后调用 `POST /messages`。
+IM 是创建 Agent 的入口。创建 Agent 时在本地事务里写入账号和 `register_agent` 待同步事件，提交后由后台调用 `PUT /agents/{agent_id}` 登记；Trigger 不可用时保留事件重试，IM 账号创建仍可成功。创建单聊、创建群聊或往群里添加 Agent 时创建订阅；移除 Agent 和解散群聊时调用对应删除接口；发送消息时调用 `POST /messages`。这些操作都通过 IM 的 `triggerclient` 接入。
 
-当前已实现五个内部业务接口及 WS 投递链路，IM 创建 Agent 时完成登记，客户端 WS 握手仍会幂等补登记。IM 尚未同步会话订阅和消息，也未回填已有 IM 数据；当前通过内部订阅和消息接口向客户端投递。Pi 执行入口尚未实现。
+会话变更与消息先在 IM 事务中写入持久化待同步队列，提交后按会话顺序调用 Trigger；失败自动重试，IM 重启后继续。会话创建时记录订阅，成员变更时记录增量事件；订阅同步前幂等登记 Agent。客户端 WS 握手仍会幂等登记 Agent。IM 的业务 HTTP 成功、Trigger 接收入队和 Adaptor 落盘 ACK 是不同阶段；Pi 执行入口尚未实现。
 
 ## 本机启动与维护
 
@@ -123,7 +123,9 @@ TRIGGER_TEST_CONFIG="$PWD/localdeploy/trigger/config.json" go test -race ./serve
 
 默认测试覆盖健康检查、缺少配置或 `im_base_url` 时启动失败，以及 IM 客户端的 Bearer 传递、续签凭据解析、握手鉴权失败状态码、禁止重定向和请求截止时间。`TRIGGER_TEST_MYSQL=1` 在仓库外创建一次性私有 MySQL 实例，关闭网络监听，通过真实 HTTP 和数据库验证五个接口、批量回滚、并发 UUID 复用、退订、Agent 相互 @、消息字段保存、入队去重、离线入队、写入失败整批回滚和连接池重开后的持久化；结束后关闭并清理该实例。
 
-同一测试开关还运行 `TestAdaptorEndToEnd`：启动真实 IM 和 Node adaptor，验证账号接入、WS 鉴权、重复连接拒绝、SQLite 落盘 ACK、重复投递、两端重启、自动重连补发以及凭据到期关闭。运行前在仓库根安装 npm 依赖；测试不访问业务库，不发出模型请求。
+同一测试开关还运行 `TestAdaptorEndToEnd`：启动真实 IM 和 Node adaptor，通过 IM 接口创建单聊/群聊、添加/移除成员、解散群聊和发送消息，验证订阅同步、群聊 @ 选择、WS 鉴权、重复连接拒绝、SQLite 落盘 ACK、重复投递、三端重启、Trigger 不可用时 IM 仍持久化消息并在重启后补发，以及凭据到期关闭。运行前在仓库根安装 npm 依赖；测试不访问业务库，不发出模型请求。
+
+`TestIMTriggerSyncEndToEnd` 在测试进程内组装真实 IM、Trigger、HTTP、MySQL 和 WS，验证 Trigger 不可用时创建 Agent、登记重试及响应丢失后的幂等处理、完整业务接口、停机补发、同步循环重启、远端入队后响应丢失的重试去重、真人和 Agent 消息载荷、退订及解散顺序。该测试不依赖 Node，也不启动额外的服务二进制。
 
 `TestChannelDeliveryOrderACKAndRecovery` 使用隔离 MySQL 和真实 WS，验证 channel 内按序号取队首、序号缺口、跨 channel 独立 ACK、新 channel 发现、超时重发、忽略非在途 ACK，以及重启恢复和 Agent 间隔离。
 

@@ -91,9 +91,13 @@ func startChild(t *testing.T, command *exec.Cmd, prefix string) (string, func())
 
 func authJSON(t *testing.T, base, method, path, token string, body any, want int) map[string]any {
 	t.Helper()
-	data, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
+	var data []byte
+	if body != nil {
+		var err error
+		data, err = json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	req, err := http.NewRequestWithContext(t.Context(), method, base+path, bytes.NewReader(data))
 	if err != nil {
@@ -109,8 +113,10 @@ func authJSON(t *testing.T, base, method, path, token string, body any, want int
 	}
 	defer response.Body.Close()
 	var result map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		t.Fatal(err)
+	if response.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if response.StatusCode != want {
 		t.Fatalf("%s %s: status %d, want %d: %v", method, path, response.StatusCode, want, result)
@@ -155,7 +161,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { triggerListener.Close() })
 	imConfig := writeConfig("im.json", map[string]any{"mysql_dsn": fmt.Sprintf("root@unix(%s)/adaptor_im?charset=utf8mb4", instance.socket), "address": "127.0.0.1:0", "insecure_local_http": true, "trigger_base_url": "http://" + triggerListener.Addr().String()})
-	imURL, _ := startChild(t, exec.Command(imBinary, "-config", imConfig), "IM 已就绪：")
+	imURL, stopIM := startChild(t, exec.Command(imBinary, "-config", imConfig), "IM 已就绪：")
 	password := newID(t)
 	authJSON(t, imURL, "POST", "/auth/register", "", map[string]any{"username": "human", "password": password, "name": "Human", "kind": "human"}, 201)
 	humanToken := authJSON(t, imURL, "POST", "/auth/login", "", map[string]any{"username": "human", "password": password, "transport": "bearer"}, 200)["token"].(string)
@@ -240,16 +246,35 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		t.Fatal("duplicate Agent connection accepted")
 	}
 	response.Body.Close()
-	source := model.Source{ChannelType: model.IMDirect, ConversationID: newID(t)}
-	subscription := requestJSON[model.SubscriptionResult](t, triggerURL, "POST", "/channels/subscriptions", model.SubscribeInput{Source: source, AgentIDs: []string{agentID}}, 200)
+	conversation := authJSON(t, imURL, "POST", "/conversations/direct", humanToken, map[string]any{"agent_id": agentID}, 200)["conversation"].(map[string]any)
+	source := model.Source{ChannelType: model.IMDirect, ConversationID: conversation["conversation_id"].(string)}
+	var subscription model.Channel
+	eventually(t, "IM direct chat creates Trigger subscription", func() bool {
+		channels, err := store.ListChannels(t.Context(), source)
+		if err != nil || len(channels) != 1 {
+			return false
+		}
+		subscription = channels[0]
+		return subscription.AgentID == agentID
+	})
 	message := func(seq int64) model.Message {
-		return model.Message{Source: source, MessageID: newID(t), MessageSeq: seq, SenderID: newID(t), SenderKind: "human", Content: fmt.Sprintf("message %d", seq), MentionedAgentIDs: []string{}, CreatedAt: time.Now().UnixMilli()}
+		t.Helper()
+		body := authJSON(t, imURL, "POST", "/conversations/"+source.ConversationID+"/messages", humanToken, map[string]any{"content": fmt.Sprintf("message %d", seq)}, 201)["message"]
+		data, _ := json.Marshal(body)
+		var result model.Message
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatal(err)
+		}
+		result.Source, result.SenderKind = source, "human"
+		if result.MessageSeq != seq {
+			t.Fatalf("message seq = %d, want %d", result.MessageSeq, seq)
+		}
+		return result
 	}
 	inbox := func() []any {
 		return authJSON(t, clientURL, "GET", "/agents/"+agentID+"/inbox", "", nil, 200)["messages"].([]any)
 	}
 	first := message(1)
-	requestJSON[handler.MessageResponse](t, triggerURL, "POST", "/messages", first, 202)
 	eventually(t, "committed receipt and ACK", func() bool {
 		_, err := store.NextDelivery(t.Context(), agentID, subscription.ChannelID)
 		return len(inbox()) == 1 && errors.Is(err, sql.ErrNoRows)
@@ -267,8 +292,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		t.Fatal("duplicate receipt")
 	}
 	authJSON(t, clientURL, "PATCH", "/agents/"+agentID, "", map[string]bool{"enabled": false}, 200)
-	second := message(2)
-	requestJSON[handler.MessageResponse](t, triggerURL, "POST", "/messages", second, 202)
+	message(2)
 	if len(inbox()) != 1 {
 		t.Fatal("disabled Agent received a message")
 	}
@@ -281,8 +305,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	authJSON(t, clientURL, "PATCH", "/agents/"+agentID, "", map[string]bool{"enabled": true}, 200)
 	eventually(t, "offline message after Trigger restart", func() bool { return len(inbox()) == 2 })
 	stopClient()
-	third := message(3)
-	requestJSON[handler.MessageResponse](t, triggerURL, "POST", "/messages", third, 202)
+	message(3)
 	clientURL, _ = startChild(t, exec.Command("node", filepath.Join(backend, "src/main.ts"), config), "Adaptor 已就绪：")
 	eventually(t, "client restart restores credentials and receipts", func() bool {
 		_, err := store.NextDelivery(t.Context(), agentID, subscription.ChannelID)
@@ -298,12 +321,59 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	sockets.Close()
 	trigger.Close()
 	store.Close()
+	message(4)
+	eventually(t, "failed IM notification retained for retry", func() bool {
+		count, err := instance.query("SELECT COUNT(*) FROM trigger_outbox WHERE attempts>0", "adaptor_im")
+		return err == nil && count == "1"
+	})
+	stopIM()
+	imConfig = writeConfig("im.json", map[string]any{"mysql_dsn": fmt.Sprintf("root@unix(%s)/adaptor_im?charset=utf8mb4", instance.socket), "address": strings.TrimPrefix(imURL, "http://"), "insecure_local_http": true, "trigger_base_url": triggerURL})
+	imURL, _ = startChild(t, exec.Command(imBinary, "-config", imConfig), "IM 已就绪：")
 	store, sockets, trigger = startTrigger(listenAddress)
-	fourth := message(4)
-	requestJSON[handler.MessageResponse](t, triggerURL, "POST", "/messages", fourth, 202)
-	eventually(t, "automatic reconnect and replay", func() bool {
+	eventually(t, "IM outbox restart recovery and automatic WS reconnect", func() bool {
 		_, err := store.NextDelivery(t.Context(), agentID, subscription.ChannelID)
 		return len(inbox()) == 4 && errors.Is(err, sql.ErrNoRows)
+	})
+
+	// Group membership changes and @ messages also enter through IM's public API.
+	group := authJSON(t, imURL, "POST", "/conversations", humanToken, map[string]any{"title": "Team", "agent_ids": []string{agentID}}, 201)["conversation"].(map[string]any)
+	groupID := group["conversation_id"].(string)
+	groupSource := model.Source{ChannelType: model.IMGroup, ConversationID: groupID}
+	other := authJSON(t, imURL, "POST", "/agents", humanToken, map[string]any{"username": "second-agent", "password": password, "name": "Second"}, 201)["agent"].(map[string]any)
+	otherID := other["participant_id"].(string)
+	authJSON(t, imURL, "POST", "/conversations/"+groupID+"/members", humanToken, map[string]any{"participant_id": otherID}, 200)
+	var groupChannelID string
+	eventually(t, "IM group members subscribed", func() bool {
+		channels, err := store.ListChannels(t.Context(), groupSource)
+		if err != nil || len(channels) != 2 {
+			return false
+		}
+		groupChannelID = channels[0].ChannelID
+		return true
+	})
+	groupMessage := authJSON(t, imURL, "POST", "/conversations/"+groupID+"/messages", humanToken,
+		map[string]any{"content": "@both", "mentioned_agent_ids": []string{agentID, otherID}}, 201)["message"].(map[string]any)
+	eventually(t, "IM group @ delivery online and offline", func() bool {
+		pending, err := store.NextDelivery(t.Context(), otherID, groupChannelID)
+		return len(inbox()) == 5 && err == nil && pending.Message.MessageID == groupMessage["message_id"]
+	})
+	authJSON(t, imURL, "POST", "/conversations/"+groupID+"/messages", humanToken, map[string]any{"content": "no mention"}, 201)
+	eventually(t, "group message without @ processed", func() bool {
+		count, err := instance.query("SELECT COUNT(*) FROM trigger_outbox", "adaptor_im")
+		return err == nil && count == "0"
+	})
+	if len(inbox()) != 5 {
+		t.Fatal("group message without @ was delivered")
+	}
+	authJSON(t, imURL, "DELETE", "/conversations/"+groupID+"/members/"+agentID, humanToken, nil, 204)
+	eventually(t, "removed Agent unsubscribed", func() bool {
+		channels, err := store.ListChannels(t.Context(), groupSource)
+		return err == nil && len(channels) == 1 && channels[0].AgentID == otherID
+	})
+	authJSON(t, imURL, "POST", "/conversations/"+groupID+"/dissolve", humanToken, nil, 200)
+	eventually(t, "dissolved group subscriptions cleared", func() bool {
+		channels, err := store.ListChannels(t.Context(), groupSource)
+		return err == nil && len(channels) == 0
 	})
 
 	// A connected socket must not remain authorized beyond its validated expiry.

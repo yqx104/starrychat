@@ -10,16 +10,20 @@ import (
 	"starrychat/backend/im/repository"
 )
 
-type AgentRegistrar interface {
+type TriggerClient interface {
 	RegisterAgent(context.Context, string) error
+	Subscribe(context.Context, model.TriggerSubscription) error
+	Unsubscribe(context.Context, model.TriggerSource, string) error
+	ClearChannel(context.Context, model.TriggerSource) error
+	SendMessage(context.Context, model.TriggerMessage) error
 }
 
 type Service struct {
 	repository *repository.Repository
-	trigger    AgentRegistrar
+	trigger    TriggerClient
 }
 
-func New(repository *repository.Repository, trigger AgentRegistrar) *Service {
+func New(repository *repository.Repository, trigger TriggerClient) *Service {
 	return &Service{repository: repository, trigger: trigger}
 }
 

@@ -2,7 +2,7 @@
 
 TypeScript 后端使用 SQLite 保存接入的 IM Agent 和本机收件箱；React/Vite 前端通过同源 `/adaptor-api` 代理调用后端。每个启用的 Agent 有一条到 Trigger 的 WS/WSS 连接。浏览器关闭不会停止后端接收。
 
-本版完成账号接入、连接状态、启停与重新认证、消息落盘 ACK、去重和离线重连补发。所有收件记录保持 `pending`；`client/pi-adaptor` 的模型和工具执行尚未接入。IM 创建 Agent 时已向 Trigger 登记，会话订阅和消息同步仍需后续接入，当前投递入口为 Trigger 的内部 HTTP API。
+本版完成账号接入、连接状态、启停与重新认证、消息落盘 ACK、去重和离线重连补发。所有收件记录保持 `pending`；`client/pi-adaptor` 的模型和工具执行尚未接入。Agent 登记、会话订阅、退订、解散和消息都通过 IM 的持久化队列自动同步到 Trigger，消息再经 WS 投递到 adaptor。
 
 ## 本机运行
 
@@ -87,4 +87,4 @@ npm test --workspace=@starrychat/adaptor-backend
 TRIGGER_TEST_MYSQL=1 go test -race ./server/backend/trigger/...
 ```
 
-Node 测试使用真实临时 SQLite，检查写入失败不 ACK、补发去重和重新打开后的持久化。Go 集成测试使用仓库外的隔离 MySQL、真实 IM 服务、Trigger WS 和 Node adaptor，验证账号接入、鉴权拒绝、单连接约束、落盘 ACK、ACK 丢失重发、停用、两端重启、自动重连和凭据到期关闭。所有测试账号与消息仅存在于临时测试库。
+Node 测试使用真实临时 SQLite，检查写入失败不 ACK、补发去重和重新打开后的持久化。Go 集成测试使用仓库外的隔离 MySQL、真实 IM 服务、Trigger WS 和 Node adaptor，从 IM 建会话、成员变更和发消息接口验证账号接入、订阅同步、群聊 @、鉴权拒绝、单连接约束、落盘 ACK、ACK 丢失重发、停用、三端重启、IM 待同步消息恢复、自动重连和凭据到期关闭。所有测试账号与消息仅存在于临时测试库。

@@ -42,7 +42,8 @@ func (s *Service) ListMembers(ctx context.Context, caller model.RequestContext, 
 
 func (s *Service) AddMember(ctx context.Context, caller model.RequestContext, input model.AddMemberInput) (model.Participant, error) {
 	return write(ctx, s, func(q *repository.Queries) (model.Participant, error) {
-		if _, err := editableGroup(ctx, q, caller, input.ConversationID); err != nil {
+		conversation, err := editableGroup(ctx, q, caller, input.ConversationID)
+		if err != nil {
 			return model.Participant{}, err
 		}
 		ownerID, err := callerOwner(ctx, q, caller)
@@ -58,7 +59,11 @@ func (s *Service) AddMember(ctx context.Context, caller model.RequestContext, in
 			return agent, err
 		}
 		if !exists {
-			err = q.InsertMember(ctx, input.ConversationID, input.ParticipantID, time.Now().UnixMilli())
+			if err := q.InsertMember(ctx, input.ConversationID, input.ParticipantID, time.Now().UnixMilli()); err != nil {
+				return agent, err
+			}
+			input := model.TriggerSubscription{TriggerSource: triggerSource(conversation), AgentIDs: []string{agent.ParticipantID}}
+			err = q.EnqueueTrigger(ctx, &conversation.ConversationID, model.TriggerSubscribe, input)
 		}
 		return agent, err
 	})
@@ -66,7 +71,8 @@ func (s *Service) AddMember(ctx context.Context, caller model.RequestContext, in
 
 func (s *Service) RemoveMember(ctx context.Context, caller model.RequestContext, input model.RemoveMemberInput) error {
 	_, err := write(ctx, s, func(q *repository.Queries) (struct{}, error) {
-		if _, err := editableGroup(ctx, q, caller, input.ConversationID); err != nil {
+		conversation, err := editableGroup(ctx, q, caller, input.ConversationID)
+		if err != nil {
 			return struct{}{}, err
 		}
 		ownerID, err := callerOwner(ctx, q, caller)
@@ -83,7 +89,11 @@ func (s *Service) RemoveMember(ctx context.Context, caller model.RequestContext,
 		if !exists {
 			return struct{}{}, businessError("NOT_FOUND", "Agent is not a member of this conversation.")
 		}
-		return struct{}{}, q.DeleteMember(ctx, input.ConversationID, input.ParticipantID)
+		if err := q.DeleteMember(ctx, input.ConversationID, input.ParticipantID); err != nil {
+			return struct{}{}, err
+		}
+		event := model.TriggerUnsubscription{TriggerSource: triggerSource(conversation), AgentID: input.ParticipantID}
+		return struct{}{}, q.EnqueueTrigger(ctx, &input.ConversationID, model.TriggerUnsubscribe, event)
 	})
 	return err
 }

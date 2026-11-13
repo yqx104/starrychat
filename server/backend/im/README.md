@@ -2,13 +2,13 @@
 
 独立 Go/MySQL 聊天服务。`handler/` 接收 HTTP，`service/` 检查业务规则并组织事务，`repository/` 执行 SQL；`common/` 提供 UUIDv7 生成和校验，`common/auth/` 处理 JWT 和账号格式校验，`config/` 读取私有运行配置，`model/` 保存共享类型。所有测试位于 `tests/`。参与者、会话、消息由后端统一生成小写标准 UUIDv7，数据库使用 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`，接口统一传字符串。支持多个真人，每个 Agent 固定属于创建它的真人；原有成员、引用、@、解散规则与所属范围一起校验。关联校验和响应组装由 Service 完成，Repository 只查询单表。
 
-IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。创建 Agent 时通过 `triggerclient/` 调用 Trigger 注册接口；会话订阅、消息同步和统一 IM CLI 尚未接入。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
+IM 不执行触发规则、不唤起 Agent、不运行模型，也不依赖 Pi。Service 通过统一的 `TriggerClient` 接口使用 `triggerclient/`：Agent 登记、会话订阅、退订、解散和消息都通过持久化待同步队列交给 Trigger。统一 IM CLI 尚未接入。[前端](../../frontend/im-web/README.md) 通过同源 `/im-api` 代理访问后端，代理必须保留浏览器的 Host 和 Origin。
 
 ## 标识与消息顺序
 
 所有业务 ID、Agent 归属、消息引用和 `mentioned_agent_ids` 数组元素均为标准 UUIDv7 字符串。接口拒绝数字 ID、非 v7 UUID、非标准格式或大写 UUID；数据库也约束 ID 格式。JWT 的 `sub` 使用参与者 UUID，旧数字身份令牌不再有效。
 
-消息新增数字字段 `message_seq`，每个会话从 1 开始独立递增。`conversations.last_message_seq` 初始为 0；发送在读已提交事务中通过 `SELECT ... FOR UPDATE` 锁定会话行，校验后递增计数器并插入消息，二者一起提交或回滚。`UNIQUE (conversation_id, message_seq)` 防止重复序号。序号最大为 `9007199254740991`，保持 JSON/JavaScript 数字精度；计数器不因重启或删除消息而重置。
+消息新增数字字段 `message_seq`，每个会话从 1 开始独立递增。`conversations.last_message_seq` 初始为 0；发送在读已提交事务中通过 `SELECT ... FOR UPDATE` 锁定会话行，校验后递增计数器、插入消息和 Trigger 待同步记录，三者一起提交或回滚。`UNIQUE (conversation_id, message_seq)` 防止重复序号。序号最大为 `9007199254740991`，保持 JSON/JavaScript 数字精度；计数器不因重启或删除消息而重置。
 
 `GET /conversations/:conversation_id/messages` 使用 `limit`（1–50，默认 50）、`before_seq`（正整数）或 `after_seq`（非负整数，0 表示从头读取），两个方向互斥。初始查询返回最新一页，before 返回紧邻的更早一页，after 返回紧邻的更新一页；响应始终按 `message_seq` 升序，`has_more` 表示该方向还有数据。旧 `before_message_id` / `after_message_id` 参数不再接受。序号仅在指定会话内比较，UUID 用于引用和去重，不用于消息排序。只读业务事务继续使用可重复读。
 
@@ -65,7 +65,7 @@ locallog/
 go run ./server/backend/im/cmd -config localdeploy/im/config.json
 ```
 
-也可用 `IM_CONFIG` 指定配置文件。配置字段是 `mysql_dsn`、`address`、`trigger_base_url`、`signing_key_file`、`insecure_local_http`、`issuer`、`audience`。默认监听地址 `127.0.0.1:4180`，`trigger_base_url` 默认 `http://127.0.0.1:4182`，可配置其他 HTTP/HTTPS 地址。相对密钥路径基于配置文件所在目录。HTTP 开发模式只允许环回 IP 监听；非本地 Cookie 请求须通过 HTTPS。入口检查连接及五张表后才开始监听，收到 SIGINT/SIGTERM 时先停止 HTTP 请求，再关闭连接池；缺少配置或表结构不符会明确失败，不隐式设置调用者。
+也可用 `IM_CONFIG` 指定配置文件。配置字段是 `mysql_dsn`、`address`、`trigger_base_url`、`signing_key_file`、`insecure_local_http`、`issuer`、`audience`。默认监听地址 `127.0.0.1:4180`，`trigger_base_url` 默认 `http://127.0.0.1:4182`，可配置其他 HTTP/HTTPS 地址。相对密钥路径基于配置文件所在目录。HTTP 开发模式只允许环回 IP 监听；非本地 Cookie 请求须通过 HTTPS。入口检查连接及六张表后才启动监听和 Trigger 同步循环；收到 SIGINT/SIGTERM 时停止 HTTP 请求、取消并等待同步循环，再关闭连接池。未完成事件保留到下次启动；缺少配置或表结构不符会明确失败，不隐式设置调用者。
 
 需要前端隔离联调时，先独立准备测试库及其应用账号，再创建 `localdeploy/im/browser/config.json`，设置监听地址 `127.0.0.1:4181`、独立的 JWT 密钥和 issuer。日志写入 `locallog/im/browser/im.log`；以下命令只管理这份配置对应的 IM 进程，不创建或清理测试数据库：
 
@@ -114,17 +114,37 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 
 `AgentAccount` 只有 `participant_id,kind,name,username,owner_participant_id,created_at`，不含密码。创建、更新不切换当前身份，沿用七天续期；重设密码不会即时撤销已签发 JWT。用户名仍全局唯一，更新显示名和凭据在同一事务中完成。
 
-`POST /agents` 和 `POST /auth/register` 的 Agent 分支都会在本地账号事务提交前调用 Trigger `PUT /agents/{participant_id}`，只发送身份 ID，不发送账号密码或 Token。HTTP 调用最多等待五秒且不跟随重定向；只有 Trigger 返回 `200` 并确认同一 Agent ID 才提交 IM 事务。调用失败返回 `503 TRIGGER_UNAVAILABLE`，回滚本次 IM 参与者和账号记录，可使用相同用户名重试。真人注册和 Agent 更新不调用 Trigger，既有 Agent 不自动补登记。
+`POST /agents` 和 `POST /auth/register` 的 Agent 分支都会在本地账号事务中写入 `register_agent` 事件，与参与者、账号一起提交或回滚。事件载荷只有 `agent_id`，不保存账号密码或 Token。提交后返回 `201`，Trigger 暂时不可用不影响账号创建和 IM 登录；后台调用 `PUT /agents/{participant_id}` 登记，失败自动重试。真人注册和 Agent 更新不产生登记事件。
 
-这是同步登记，不是跨数据库原子事务：若 Trigger 已登记但响应丢失，或随后 IM 提交失败，Trigger 可能保留一个没有对应 IM 账号的身份 ID。Trigger 登记接口幂等；此类孤立记录的对账清理尚未实现。
+创建成功表示 IM 账号和登记任务已持久化，Trigger 的登记可能稍后完成。后台只发送已提交的事件；响应丢失或进程退出会使用同一 Agent ID 重试，Trigger 登记接口幂等。订阅同步前和客户端 WS 握手时仍会幂等登记 Agent，保证后续操作的前置条件。
 
 `GET /participants` 的响应格式不变。真人只能看到自己和自己的 Agent；Agent 只能看到所属真人及同主 Agent。创建单聊、拉群、加人、移除和 @ 也校验相同 owner。会话列表及历史仍要求成员身份，不提供跨真人共享群。已有 `/auth/register` 的 agent 分支执行同样的 owner 校验。
+
+## Trigger 同步
+
+`Service.trigger` 的类型为 `TriggerClient`，由 `cmd` 注入 `*triggerclient.Client`，统一提供 `RegisterAgent`、`Subscribe`、`Unsubscribe`、`ClearChannel`、`SendMessage`。HTTP 调用均有五秒超时，不跟随重定向。IM 使用自己的 DTO，不导入 Trigger 的业务包。
+
+| IM 操作 | 提交后调用的 Trigger 接口 |
+| --- | --- |
+| 创建 Agent | `PUT /agents/{agent_id}`，仅发送身份 ID |
+| 创建单聊、创建群聊、添加 Agent 成员 | `POST /channels/subscriptions`，仅订阅 Agent，空群不调用 |
+| 移除 Agent 成员 | `DELETE /channels/{channel_type}/{conversation_id}/agents/{agent_id}` |
+| 解散群聊，包括重复解散 | `DELETE /channels/{channel_type}/{conversation_id}` |
+| 发送消息 | `POST /messages`，复用 IM 的消息 ID、序号、正文、引用、@ 和时间；补齐 `im_direct/im_group` 及发送者类型 |
+
+这些操作在各自的业务事务内写入 `trigger_outbox`；写入失败则业务也回滚。Agent 登记事件的 `conversation_id` 为 NULL，彼此独立处理；会话事件必须关联会话，并在锁定会话后写入。HTTP 成功响应表示 IM 业务和待同步记录已持久化，不等待 Trigger 登记、入队或客户端 ACK。后台 `RunTriggerSync` 每秒检查队列，只读取已提交事件，每个会话严格按事件 ID 顺序处理；失败后按 1、2、4、8、16、30 秒间隔重试，后续保持 30 秒。失败事件不会被跳过或丢弃，同一会话的后续操作等待它成功，其他会话和 Agent 登记仍可处理。
+
+处理期间锁定队首事件，`FOR UPDATE SKIP LOCKED` 防止并发同步循环重复处理或越过同一会话的队首。成功确认后删除事件；进程退出、响应丢失或本地完成记录未提交时，重启后继续重试。消息始终使用原 `message_id`，由 Trigger 按 `(agent_id,message_id)` 去重；订阅和删除接口也支持重复调用。事件的 `attempts`、`next_attempt_at` 可用于排查积压，失败原因写服务日志。永久失败也保留重试，需要修复原因，不自动跳过。
+
+创建会话时按 Agent 名单写入订阅事件，后续成员变更记录增量事件；发送消息只记录消息事件。打开已有单聊或重复添加已有成员不产生新的订阅事件。订阅事件处理时先幂等登记其中的 Agent；取消订阅和解散不会撤回 Trigger 已入队的消息。
 
 ## 本机数据库结构维护
 
 已有数据库需要改表时，先用 `localdeploy/im/stop.sh` 停止 IM 并保留独立的 MySQL 运行，将需要保留的数据备份到仓库外，再在本机直接执行所需 SQL。同步更新 `sql/schema.sql` 和受影响的服务代码，再用 `localdeploy/im/start.sh` 重新构建、启动最新服务并验证。
 
 `sql/schema.sql` 保存当前完整表结构，供阅读和新建空库使用。仓库不维护迁移脚本或自动改表流程，启动脚本不执行 SQL。
+
+启用 Trigger 同步前，需要按 `sql/schema.sql` 创建 `trigger_outbox` 表。若已创建旧版 outbox，需要允许 `conversation_id` 为 NULL，并更新事件类型及会话关联约束以支持 `register_agent`。应用不会自动建表或改表。Trigger 库结构不变。
 
 ## 验证
 
@@ -135,3 +155,5 @@ IM_TEST_MYSQL=1 go test -race -count=1 ./server/backend/im/...
 ```
 
 自动化 MySQL 测试创建一次性私有数据目录和 socket，关闭网络监听，测试完成后自动关闭进程并删除目录。包含原有 Handler/聊天业务/SQL 场景、并发单聊复用、跨连接池的会话内序号分配、计数器回滚与重启、UUID 与时间顺序相反时的分页、Trigger UUID 字段约束、发消息与成员变更、取消及回滚、64 路重复关闭、注册原子性、JWT 严格验证与受控时钟续期、Cookie/Bearer 隔离、私有密钥复用，以及真实 HTTP 监听到数据库和重启的验证。另有多真人管理、跨 owner 拒绝、并发账号唯一性与局部更新验证。测试账号只存在于隔离测试库。
+
+`TestTriggerOutbox` 验证两个 Agent 创建入口的异步登记、载荷不含凭据、失败重试及连接池重开、登记失败不阻塞其他 Agent，以及全部会话事件与完整消息载荷、待同步写入失败时业务回滚、未提交事件隔离、不同会话独立推进、并发同步循环的顺序和重复操作不增加订阅。Trigger 模块的 `TestAdaptorEndToEnd` 从真实 IM 的建会话、成员变更和发消息接口验证到 Adaptor 收件、ACK 以及 IM 重启后的补发。

@@ -79,15 +79,24 @@ func (s *Service) SendMessage(ctx context.Context, caller model.RequestContext, 
 		if err := quotedMessage(ctx, q, input.ConversationID, input.QuotedMessageID); err != nil {
 			return model.Message{}, err
 		}
+		sender, err := q.GetParticipant(ctx, caller.ParticipantID)
+		if err != nil {
+			return model.Message{}, err
+		}
 		seq, err := q.NextMessageSeq(ctx, input.ConversationID)
 		if err != nil {
 			return model.Message{}, err
 		}
-		return q.InsertMessage(ctx, model.Message{
+		message, err := q.InsertMessage(ctx, model.Message{
 			MessageSeq:     seq,
 			ConversationID: input.ConversationID, SenderID: caller.ParticipantID, Content: input.Content,
 			QuotedMessageID: input.QuotedMessageID, CreatedAt: time.Now().UnixMilli(), MentionedAgentIDs: mentions,
 		})
+		if err != nil {
+			return model.Message{}, err
+		}
+		event := model.TriggerMessage{Message: message, ChannelType: triggerSource(conversation).ChannelType, SenderKind: sender.Kind}
+		return message, q.EnqueueTrigger(ctx, &conversation.ConversationID, model.TriggerSendMessage, event)
 	})
 }
 

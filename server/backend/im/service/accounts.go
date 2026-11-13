@@ -50,9 +50,9 @@ func (s *Service) Register(ctx context.Context, caller model.RequestContext, inp
 			return model.Participant{}, err
 		}
 		if input.Kind == model.Agent {
-			// Register before committing so a Trigger failure rolls back the new IM account.
-			if s.trigger == nil || s.trigger.RegisterAgent(ctx, participant.ParticipantID) != nil {
-				return model.Participant{}, businessError("TRIGGER_UNAVAILABLE", "Unable to register Agent with Trigger. Please retry.")
+			event := model.TriggerAgentRegistration{AgentID: participant.ParticipantID}
+			if err := q.EnqueueTrigger(ctx, nil, model.TriggerRegisterAgent, event); err != nil {
+				return model.Participant{}, err
 			}
 		}
 		return participant, nil

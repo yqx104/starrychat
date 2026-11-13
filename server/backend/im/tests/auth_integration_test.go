@@ -22,10 +22,6 @@ import (
 
 const testPassword = "only-isolated-tests-123"
 
-type successfulAgentRegistrar struct{}
-
-func (successfulAgentRegistrar) RegisterAgent(context.Context, string) error { return nil }
-
 type authFixture struct {
 	*imFixture
 	api    *handler.API
@@ -51,7 +47,7 @@ func newAuthFixture(t *testing.T, instance *mysqlInstance) *authFixture {
 	f.exec(t, "DELETE FROM participant_accounts")
 	f.exec(t, "DELETE FROM participants")
 	f.tokens, f.clock, _ = testTokens(t)
-	s := service.New(f.store, successfulAgentRegistrar{})
+	s := service.New(f.store, nil)
 	f.api = handler.NewAPI(s, s, f.tokens, handler.APIOptions{InsecureLocalHTTP: true})
 	return f
 }

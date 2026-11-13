@@ -74,6 +74,13 @@ func run(ctx context.Context, path string, bind bool) error {
 		return errors.New("HTTP 地址无法监听，请检查配置和端口占用。")
 	}
 	server := &http.Server{Handler: api, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	syncContext, stopSync := context.WithCancel(ctx)
+	syncDone := make(chan struct{})
+	go func() {
+		defer close(syncDone)
+		s.RunTriggerSync(syncContext)
+	}()
+	defer func() { stopSync(); <-syncDone }()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	fmt.Fprintf(os.Stdout, "IM 已就绪：http://%s\n", listener.Addr())

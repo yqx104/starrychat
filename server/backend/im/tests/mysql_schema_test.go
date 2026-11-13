@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestSchemaContainsOnlyFiveCreateTables(t *testing.T) {
+func TestSchemaContainsOnlySixCreateTables(t *testing.T) {
 	schema, err := os.ReadFile(filepath.Join("..", "sql", "schema.sql"))
 	if err != nil {
 		t.Fatal(err)
@@ -31,8 +31,8 @@ func TestSchemaContainsOnlyFiveCreateTables(t *testing.T) {
 		}
 		count++
 	}
-	if count != 5 {
-		t.Fatalf("CREATE TABLE statements = %d, want 5", count)
+	if count != 6 {
+		t.Fatalf("CREATE TABLE statements = %d, want 6", count)
 	}
 }
 
@@ -49,12 +49,12 @@ func TestMySQLSchema(t *testing.T) {
 		}
 	}
 	t.Run("uuid_columns_indexes_and_sequence_constraints", func(t *testing.T) {
-		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND engine='InnoDB'"), int64(5))
-		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND column_name IN ('participant_id','owner_participant_id','conversation_id','message_id','sender_id','quoted_message_id') AND column_type='char(36)' AND collation_name='ascii_bin'"), int64(10))
-		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND extra LIKE '%auto_increment%'"), int64(0))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND engine='InnoDB'"), int64(6))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND column_name IN ('participant_id','owner_participant_id','conversation_id','message_id','sender_id','quoted_message_id') AND column_type='char(36)' AND collation_name='ascii_bin'"), int64(11))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND extra LIKE '%auto_increment%'"), int64(1))
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE()"), int64(0))
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema=DATABASE()"), int64(0))
-		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND column_name='created_at' AND data_type='bigint' AND is_nullable='NO' AND column_default IS NULL"), int64(5))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND column_name='created_at' AND data_type='bigint' AND is_nullable='NO' AND column_default IS NULL"), int64(6))
 		var columns string
 		if err := f.db.QueryRowContext(t.Context(), "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema=DATABASE() AND index_name='messages_conversation_seq' AND non_unique=0").Scan(&columns); err != nil {
 			t.Fatal(err)
@@ -74,6 +74,14 @@ func TestMySQLSchema(t *testing.T) {
 		reject("INSERT INTO conversations (conversation_id,kind,title,created_at) VALUES (?,'group',NULL,1)", 3819, testID(100))
 		reject("INSERT INTO conversations (conversation_id,kind,title,created_at) VALUES (?,'group',' ',1)", 3819, testID(100))
 		reject("INSERT INTO conversations (conversation_id,kind,title,created_at) VALUES (?,'other','Bad',1)", 3819, testID(100))
+	})
+	t.Run("trigger_event_conversation_scope", func(t *testing.T) {
+		insert := "INSERT INTO trigger_outbox (conversation_id,operation,payload,next_attempt_at,created_at) VALUES (?,?,JSON_OBJECT('agent_id',?),0,1)"
+		f.exec(t, insert, nil, "register_agent", f.alpha.ParticipantID)
+		reject(insert, 3819, testID(100), "register_agent", f.alpha.ParticipantID)
+		for _, operation := range []string{"subscribe", "unsubscribe", "clear", "message"} {
+			reject(insert, 3819, nil, operation, f.alpha.ParticipantID)
+		}
 	})
 	t.Run("message_sequences_quotes_and_json", func(t *testing.T) {
 		group := f.group(t, f.alpha)

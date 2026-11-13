@@ -84,6 +84,7 @@ func (r *Repository) CheckSchema(ctx context.Context) error {
 		"SELECT conversation_id, kind, title, created_at, dissolved_at, last_message_seq FROM conversations LIMIT 0",
 		"SELECT conversation_id, participant_id, created_at FROM conversation_members LIMIT 0",
 		"SELECT message_id, message_seq, conversation_id, sender_id, content, quoted_message_id, created_at, mentioned_agent_ids FROM messages LIMIT 0",
+		"SELECT id, conversation_id, operation, payload, attempts, next_attempt_at, created_at FROM trigger_outbox LIMIT 0",
 	} {
 		rows, err := r.pool.QueryContext(ctx, query)
 		if err != nil {

@@ -50,3 +50,16 @@ CREATE TABLE messages (
         CHECK (JSON_TYPE(mentioned_agent_ids) = 'ARRAY'),
     UNIQUE KEY messages_conversation_seq (conversation_id, message_seq)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_bin;
+
+CREATE TABLE trigger_outbox (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    conversation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL CHECK (REGEXP_LIKE(conversation_id, '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'c')),
+    operation VARCHAR(16) NOT NULL CHECK (operation IN ('register_agent', 'subscribe', 'unsubscribe', 'clear', 'message')),
+    payload JSON NOT NULL CHECK (JSON_TYPE(payload) = 'OBJECT'),
+    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    next_attempt_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL,
+    CHECK ((operation = 'register_agent' AND conversation_id IS NULL) OR
+           (operation <> 'register_agent' AND conversation_id IS NOT NULL)),
+    KEY trigger_outbox_conversation_order (conversation_id, id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_bin;

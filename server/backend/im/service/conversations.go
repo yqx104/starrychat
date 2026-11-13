@@ -62,6 +62,12 @@ func (s *Service) CreateGroup(ctx context.Context, caller model.RequestContext, 
 				return conversation, err
 			}
 		}
+		if len(agentIDs) > 0 {
+			subscription := model.TriggerSubscription{TriggerSource: triggerSource(conversation), AgentIDs: agentIDs}
+			if err := q.EnqueueTrigger(ctx, &conversation.ConversationID, model.TriggerSubscribe, subscription); err != nil {
+				return conversation, err
+			}
+		}
 		return conversation, nil
 	})
 }
@@ -112,7 +118,8 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 				return conversation, err
 			}
 		}
-		return conversation, nil
+		subscription := model.TriggerSubscription{TriggerSource: triggerSource(conversation), AgentIDs: []string{agent.ParticipantID}}
+		return conversation, q.EnqueueTrigger(ctx, &conversation.ConversationID, model.TriggerSubscribe, subscription)
 	})
 }
 
@@ -145,14 +152,13 @@ func (s *Service) DissolveGroup(ctx context.Context, caller model.RequestContext
 		if err := requireGroup(conversation); err != nil {
 			return conversation, err
 		}
-		if conversation.DissolvedAt != nil {
-			return conversation, nil
+		if conversation.DissolvedAt == nil {
+			now := time.Now().UnixMilli()
+			if err := q.SetDissolvedAt(ctx, id, now); err != nil {
+				return conversation, err
+			}
+			conversation.DissolvedAt = &now
 		}
-		now := time.Now().UnixMilli()
-		if err := q.SetDissolvedAt(ctx, id, now); err != nil {
-			return conversation, err
-		}
-		conversation.DissolvedAt = &now
-		return conversation, nil
+		return conversation, q.EnqueueTrigger(ctx, &id, model.TriggerClear, triggerSource(conversation))
 	})
 }

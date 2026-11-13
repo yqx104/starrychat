@@ -240,7 +240,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer other.Close()
-		services := []*service.Service{service.New(f.store, successfulAgentRegistrar{}), service.New(other, successfulAgentRegistrar{})}
+		services := []*service.Service{service.New(f.store, nil), service.New(other, nil)}
 		owners := []loginResult{one, two}
 		var workers sync.WaitGroup
 		results := make(chan error, 2)
