@@ -39,8 +39,8 @@ function agentAccount(value: unknown): AgentAccount {
 }
 function conversation(value: unknown): Conversation {
   const c = object(value);
-  if (c.kind !== 'direct' && c.kind !== 'group') return invalid();
-  return { conversation_id: id(c.conversation_id), kind: c.kind, title: c.title === null ? null : string(c.title), created_at: timestamp(c.created_at), dissolved_at: c.dissolved_at === null ? null : timestamp(c.dissolved_at) };
+  if ((c.kind !== 'direct' && c.kind !== 'group') || typeof c.hidden !== 'boolean') return invalid();
+  return { conversation_id: id(c.conversation_id), kind: c.kind, title: c.title === null ? null : string(c.title), created_at: timestamp(c.created_at), dissolved_at: c.dissolved_at === null ? null : timestamp(c.dissolved_at), hidden: c.hidden };
 }
 function message(value: unknown): Message {
   const m = object(value);
@@ -188,6 +188,12 @@ export class ImApi {
   async openDirect(agentId: string): Promise<Conversation> {
     validId(agentId);
     return conversation(object(await this.request('/conversations/direct', { method: 'POST', body: { agent_id: agentId } })).conversation);
+  }
+  async setVisibility(conversationId: string, hidden: boolean): Promise<Conversation> {
+    validId(conversationId);
+    const result = conversation(object(await this.request(`/conversations/${conversationId}/visibility`, { method: 'PATCH', body: { hidden } })).conversation);
+    if (result.conversation_id !== conversationId || result.hidden !== hidden) return invalid();
+    return result;
   }
   async rename(conversationId: string, title: string): Promise<Conversation> {
     validId(conversationId);

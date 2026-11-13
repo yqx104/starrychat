@@ -22,6 +22,7 @@ type ParticipantsQuery = model.ParticipantsQuery
 type CreateGroupInput = model.CreateGroupInput
 type OpenDirectInput = model.OpenDirectInput
 type RenameGroupInput = model.RenameGroupInput
+type SetConversationVisibilityInput = model.SetConversationVisibilityInput
 type AddMemberInput = model.AddMemberInput
 type RemoveMemberInput = model.RemoveMemberInput
 type SendMessageInput = model.SendMessageInput
@@ -76,6 +77,7 @@ type Service interface {
 	CreateGroup(context.Context, RequestContext, CreateGroupInput) (Conversation, error)
 	OpenDirect(context.Context, RequestContext, OpenDirectInput) (Conversation, error)
 	GetConversation(context.Context, RequestContext, string) (Conversation, error)
+	SetConversationVisibility(context.Context, RequestContext, SetConversationVisibilityInput) (Conversation, error)
 	RenameGroup(context.Context, RequestContext, RenameGroupInput) (Conversation, error)
 	DissolveGroup(context.Context, RequestContext, string) (Conversation, error)
 	ListMembers(context.Context, RequestContext, string) ([]Participant, error)

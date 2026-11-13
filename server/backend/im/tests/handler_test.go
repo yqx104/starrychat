@@ -54,6 +54,9 @@ func (s *serviceStub) OpenDirect(c context.Context, a handler.RequestContext, i 
 func (s *serviceStub) GetConversation(c context.Context, a handler.RequestContext, id string) (handler.Conversation, error) {
 	return invoke[handler.Conversation](s, "GetConversation", c, a, id)
 }
+func (s *serviceStub) SetConversationVisibility(c context.Context, a handler.RequestContext, i handler.SetConversationVisibilityInput) (handler.Conversation, error) {
+	return invoke[handler.Conversation](s, "SetConversationVisibility", c, a, i)
+}
 func (s *serviceStub) RenameGroup(c context.Context, a handler.RequestContext, i handler.RenameGroupInput) (handler.Conversation, error) {
 	return invoke[handler.Conversation](s, "RenameGroup", c, a, i)
 }

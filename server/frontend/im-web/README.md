@@ -1,6 +1,10 @@
 # IM Web
 
-React + TypeScript 单页前端。`src/app` 负责装配，`src/api` 定义接口与请求客户端，`src/features` 按认证、会话和聊天组织业务，`src/components` 放共享组件，`src/styles` 放样式；测试与演示接口替身放在 `tests`。聊天状态仅保存在当前页面内存中。业务 ID 均为后端生成的标准 UUIDv7 字符串；消息按会话内的数字 `message_seq` 排序，通过 `before_seq` / `after_seq` 分页和增量同步，引用与去重仍使用 `message_id`。发送回执只合并消息，不越过尚未拉取的数据推进轮询游标。
+React + TypeScript 单页前端。`src/app` 负责装配，`src/api` 定义接口与请求客户端，`src/features` 按认证、会话和聊天组织业务，`src/components` 放共享组件，`src/styles` 放样式；测试与演示接口替身放在 `tests`。选中聊天、搜索和草稿等临时界面状态仅保存在当前页面内存中。业务 ID 均为后端生成的标准 UUIDv7 字符串；消息按会话内的数字 `message_seq` 排序，通过 `before_seq` / `after_seq` 分页和增量同步，引用与去重仍使用 `message_id`。发送回执只合并消息，不越过尚未拉取的数据推进轮询游标。
+
+左侧提供「消息」「通讯录」「群聊」三个入口。前端保留 `GET /conversations` 返回的完整会话列表，「消息」只显示 `hidden=false` 的会话，「群聊」展示全部群，包括已从消息列表移除的群。消息列表每项的关闭按钮调用 visibility 接口，将当前成员的 `hidden` 保存为 `true`；刷新页面后仍保持隐藏。
+
+从通讯录点击 Agent 会打开并恢复原单聊，从群聊列表点击群会恢复原群聊并切回消息页，历史消息保留。移除聊天不退群、不解散，也不影响 Trigger 投递；新消息暂不自动恢复显示。列表显示状态保存在后端，当前选中聊天、搜索和草稿仍保存在页面内存中。
 
 在仓库根目录运行：
 

@@ -83,6 +83,12 @@ func TestMySQLSchema(t *testing.T) {
 			reject(insert, 3819, nil, operation, f.alpha.ParticipantID)
 		}
 	})
+	t.Run("membership_visibility_is_a_required_boolean_defaulting_to_false", func(t *testing.T) {
+		group := f.group(t, f.alpha)
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversation_members WHERE conversation_id=? AND hidden=0", group.ConversationID), int64(2))
+		reject("UPDATE conversation_members SET hidden=2 WHERE conversation_id=?", 3819, group.ConversationID)
+		reject("UPDATE conversation_members SET hidden=NULL WHERE conversation_id=?", 1048, group.ConversationID)
+	})
 	t.Run("message_sequences_quotes_and_json", func(t *testing.T) {
 		group := f.group(t, f.alpha)
 		other := f.group(t, f.beta)

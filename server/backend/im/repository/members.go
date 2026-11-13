@@ -8,16 +8,16 @@ import (
 
 func scanMembership(row scanner) (model.Membership, error) {
 	var member model.Membership
-	err := row.Scan(&member.ConversationID, &member.ParticipantID, &member.CreatedAt)
+	err := row.Scan(&member.ConversationID, &member.ParticipantID, &member.CreatedAt, &member.Hidden)
 	return member, err
 }
 
 func (q *Queries) GetMembership(ctx context.Context, conversationID, participantID string) (model.Membership, error) {
-	return scanMembership(q.db.QueryRowContext(ctx, "SELECT conversation_id, participant_id, created_at FROM conversation_members WHERE conversation_id = ? AND participant_id = ?", conversationID, participantID))
+	return scanMembership(q.db.QueryRowContext(ctx, "SELECT conversation_id, participant_id, created_at, hidden FROM conversation_members WHERE conversation_id = ? AND participant_id = ?", conversationID, participantID))
 }
 
 func (q *Queries) ListMemberships(ctx context.Context, conversationID string) ([]model.Membership, error) {
-	rows, err := q.db.QueryContext(ctx, "SELECT conversation_id, participant_id, created_at FROM conversation_members WHERE conversation_id = ? ORDER BY participant_id", conversationID)
+	rows, err := q.db.QueryContext(ctx, "SELECT conversation_id, participant_id, created_at, hidden FROM conversation_members WHERE conversation_id = ? ORDER BY participant_id", conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -40,5 +40,10 @@ func (q *Queries) InsertMember(ctx context.Context, conversationID, participantI
 
 func (q *Queries) DeleteMember(ctx context.Context, conversationID, participantID string) error {
 	_, err := q.db.ExecContext(ctx, "DELETE FROM conversation_members WHERE conversation_id = ? AND participant_id = ?", conversationID, participantID)
+	return err
+}
+
+func (q *Queries) SetMembershipHidden(ctx context.Context, conversationID, participantID string, hidden bool) error {
+	_, err := q.db.ExecContext(ctx, "UPDATE conversation_members SET hidden = ? WHERE conversation_id = ? AND participant_id = ?", hidden, conversationID, participantID)
 	return err
 }

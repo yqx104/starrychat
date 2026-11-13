@@ -6,6 +6,26 @@ const message = { message_seq: 5, message_id: testID(5), conversation_id: testID
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
 describe('IM API', () => {
+  it('returns hidden conversations and persists visibility with a boolean', async () => {
+    const chat = { conversation_id: testID(3), kind: 'group', title: '项目组', created_at: 1, dissolved_at: null, hidden: true };
+    const fetcher = vi.fn().mockResolvedValueOnce(json({ conversations: [chat] }));
+    const client = new ImApi('/api', fetcher);
+    await expect(client.conversations()).resolves.toEqual([chat]);
+    for (const hidden of [false, true]) {
+      fetcher.mockResolvedValueOnce(json({ conversation: { ...chat, hidden } }));
+      await expect(client.setVisibility(chat.conversation_id, hidden)).resolves.toMatchObject({ hidden });
+      const [url, options] = fetcher.mock.calls.at(-1)!;
+      expect(url).toBe(`/api/conversations/${chat.conversation_id}/visibility`);
+      expect(options.method).toBe('PATCH');
+      expect(JSON.parse(options.body)).toEqual({ hidden });
+    }
+    for (const hidden of [undefined, null, 0, 'true']) {
+      fetcher.mockResolvedValueOnce(json({ conversations: [{ ...chat, hidden }] }));
+      await expect(client.conversations()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    }
+    fetcher.mockResolvedValueOnce(json({ conversation: { ...chat, conversation_id: testID(4) } }));
+    await expect(client.setVisibility(chat.conversation_id, true)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
   it('accepts sequence zero for increments and validates UUIDs independently from numeric sequences', async () => {
     const fetcher = vi.fn().mockResolvedValue(json({ messages: [message], has_more: false }));
     const client = new ImApi('/api', fetcher);

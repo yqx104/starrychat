@@ -13,9 +13,9 @@ const people = [
   { participant_id: fixtureID(5), kind: 'agent', name: 'Kai', created_at: now - 86400000 * 7 },
 ];
 let conversations = [
-  { conversation_id: fixtureID(101), kind: 'group', title: '产品协作小组', created_at: now - 86400000, dissolved_at: null },
-  { conversation_id: fixtureID(102), kind: 'direct', title: 'Mia', created_at: now - 86400000 * 2, dissolved_at: null },
-  { conversation_id: fixtureID(103), kind: 'group', title: '内容创作小组', created_at: now - 86400000 * 3, dissolved_at: null },
+  { conversation_id: fixtureID(101), kind: 'group', title: '产品协作小组', created_at: now - 86400000, dissolved_at: null, hidden: false },
+  { conversation_id: fixtureID(102), kind: 'direct', title: 'Mia', created_at: now - 86400000 * 2, dissolved_at: null, hidden: false },
+  { conversation_id: fixtureID(103), kind: 'group', title: '内容创作小组', created_at: now - 86400000 * 3, dissolved_at: null, hidden: false },
 ];
 const members = new Map([[101, [1, 2, 3, 4]], [102, [1, 2]], [103, [1, 4, 5]]].map(([id, ids]) => [fixtureID(id), ids.map(fixtureID)]));
 let nextConversation = 104, nextMessage = 10;
@@ -64,19 +64,21 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/participants' && method === 'GET') return reply(res, 200, { participants: url.searchParams.has('kind') ? people.filter((p) => p.kind === url.searchParams.get('kind')) : people });
     if (url.pathname === '/conversations' && method === 'GET') return reply(res, 200, { conversations });
     if (url.pathname === '/conversations' && method === 'POST') {
-      const body = await readBody(req); const conversation = { conversation_id: fixtureID(nextConversation++), kind: 'group', title: body.title, created_at: Date.now(), dissolved_at: null };
+      const body = await readBody(req); const conversation = { conversation_id: fixtureID(nextConversation++), kind: 'group', title: body.title, created_at: Date.now(), dissolved_at: null, hidden: false };
       conversations = [conversation, ...conversations]; members.set(conversation.conversation_id, [fixtureID(1), ...body.agent_ids]); return reply(res, 201, { conversation });
     }
     if (url.pathname === '/conversations/direct' && method === 'POST') {
       const body = await readBody(req); let conversation = conversations.find((c) => c.kind === 'direct' && members.get(c.conversation_id)?.includes(body.agent_id));
-      if (!conversation) { conversation = { conversation_id: fixtureID(nextConversation++), kind: 'direct', title: people.find((p) => p.participant_id === body.agent_id)?.name ?? null, created_at: Date.now(), dissolved_at: null }; conversations = [conversation, ...conversations]; members.set(conversation.conversation_id, [fixtureID(1), body.agent_id]); }
+      if (!conversation) { conversation = { conversation_id: fixtureID(nextConversation++), kind: 'direct', title: people.find((p) => p.participant_id === body.agent_id)?.name ?? null, created_at: Date.now(), dissolved_at: null, hidden: false }; conversations = [conversation, ...conversations]; members.set(conversation.conversation_id, [fixtureID(1), body.agent_id]); }
+      conversation.hidden = false;
       return reply(res, 200, { conversation });
     }
-    const match = url.pathname.match(/^\/conversations\/([0-9a-f-]{36})(?:\/(dissolve|members|messages)(?:\/([0-9a-f-]{36}))?)?$/);
+    const match = url.pathname.match(/^\/conversations\/([0-9a-f-]{36})(?:\/(dissolve|members|messages|visibility)(?:\/([0-9a-f-]{36}))?)?$/);
     if (!match) return fail(res, 404, '未找到接口');
     const id = match[1]; const conversation = conversations.find((c) => c.conversation_id === id);
     if (!conversation) return fail(res, 404, '未找到会话');
     if (!match[2] && method === 'GET') return reply(res, 200, { conversation });
+    if (match[2] === 'visibility' && method === 'PATCH') { const body = await readBody(req); if (typeof body.hidden !== 'boolean') return fail(res, 400, 'hidden 必须是布尔值'); conversation.hidden = body.hidden; return reply(res, 200, { conversation }); }
     if (!match[2] && method === 'PATCH') { const body = await readBody(req); conversation.title = body.title; return reply(res, 200, { conversation }); }
     if (match[2] === 'dissolve' && method === 'POST') { conversation.dissolved_at = Date.now(); return reply(res, 200, { conversation }); }
     if (match[2] === 'members' && method === 'GET') return reply(res, 200, { members: people.filter((p) => members.get(id)?.includes(p.participant_id)) });

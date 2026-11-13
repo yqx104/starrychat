@@ -34,6 +34,7 @@ CREATE TABLE conversation_members (
     conversation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL CHECK (REGEXP_LIKE(conversation_id, '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'c')),
     participant_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL CHECK (REGEXP_LIKE(participant_id, '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'c')),
     created_at BIGINT NOT NULL, -- Unix 毫秒。
+    hidden BOOLEAN NOT NULL DEFAULT FALSE CHECK (hidden IN (0, 1)),
     PRIMARY KEY (conversation_id, participant_id),
     KEY conversation_members_participant_conversation (participant_id, conversation_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_bin;

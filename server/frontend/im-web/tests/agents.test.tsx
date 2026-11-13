@@ -10,8 +10,8 @@ const human: Participant = { participant_id: testID(1), kind: 'human', name: '�
 const agent: AgentAccount = { participant_id: testID(2), kind: 'agent', name: 'Mia', username: 'mia.test', owner_participant_id: testID(1), created_at: 2 };
 const newcomer: AgentAccount = { participant_id: testID(3), kind: 'agent', name: 'Nova', username: 'nova.test', owner_participant_id: testID(1), created_at: 3 };
 const participant = (value: AgentAccount): Participant => ({ participant_id: value.participant_id, kind: 'agent', name: value.name, created_at: value.created_at });
-const group: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 11, dissolved_at: null };
-const direct: Conversation = { conversation_id: testID(12), kind: 'direct', title: null, created_at: 10, dissolved_at: null };
+const group: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 11, dissolved_at: null, hidden: false };
+const direct: Conversation = { conversation_id: testID(12), kind: 'direct', title: null, created_at: 10, dissolved_at: null, hidden: false };
 function basic() {
   vi.spyOn(api, 'me').mockResolvedValue(human);
   vi.spyOn(api, 'participants').mockResolvedValue([human, participant(agent)]);
@@ -56,7 +56,7 @@ describe('Agent management', () => {
     const update = vi.spyOn(api, 'updateAgent').mockResolvedValue(renamed);
     const user = userEvent.setup(); render(<App />);
     await screen.findByText('原有消息');
-    await user.click(await screen.findByRole('button', { name: new RegExp(`单聊 #${testID(12)}`) }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(`^单聊 #${testID(12)}`) }));
     await waitFor(() => expect(screen.getByRole('button', { name: /Mia.*单聊/ })).toBeTruthy());
     await user.click(screen.getByRole('button', { name: /项目组.*群聊/ }));
     await screen.findByText('原有消息');

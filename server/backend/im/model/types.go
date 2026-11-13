@@ -22,6 +22,7 @@ type Conversation struct {
 	Title          *string `json:"title"`
 	CreatedAt      int64   `json:"created_at"`
 	DissolvedAt    *int64  `json:"dissolved_at"`
+	Hidden         bool    `json:"hidden"` // The current caller's membership state.
 }
 
 type Message struct {
@@ -55,6 +56,11 @@ type OpenDirectInput struct {
 type RenameGroupInput struct {
 	ConversationID string
 	Title          string
+}
+
+type SetConversationVisibilityInput struct {
+	ConversationID string
+	Hidden         bool
 }
 
 type AddMemberInput struct {
@@ -99,4 +105,5 @@ type Membership struct {
 	ConversationID string
 	ParticipantID  string
 	CreatedAt      int64
+	Hidden         bool
 }

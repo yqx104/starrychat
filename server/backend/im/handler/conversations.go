@@ -1,5 +1,7 @@
 package handler
 
+import "encoding/json"
+
 func (h *Handler) listConversations(in requestInput) (any, int, error) {
 	conversations, err := h.service.ListConversations(in.request.Context(), in.caller)
 	return ConversationsResponse{nonNil(conversations)}, 200, err
@@ -41,6 +43,23 @@ func (h *Handler) getConversation(in requestInput) (any, int, error) {
 		return nil, 0, err
 	}
 	conversation, err := h.service.GetConversation(in.request.Context(), in.caller, id)
+	return ConversationResponse{conversation}, 200, err
+}
+
+func (h *Handler) setConversationVisibility(in requestInput) (any, int, error) {
+	id, err := pathID(in.params[0], "conversation_id")
+	if err != nil {
+		return nil, 0, err
+	}
+	body, err := bodyObject(in.request, []string{"hidden"}, false)
+	if err != nil {
+		return nil, 0, err
+	}
+	var hidden *bool
+	if err := json.Unmarshal(body["hidden"], &hidden); err != nil || hidden == nil {
+		return nil, 0, invalid("hidden must be a boolean.")
+	}
+	conversation, err := h.service.SetConversationVisibility(in.request.Context(), in.caller, SetConversationVisibilityInput{ConversationID: id, Hidden: *hidden})
 	return ConversationResponse{conversation}, 200, err
 }
 

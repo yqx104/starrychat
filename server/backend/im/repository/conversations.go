@@ -41,21 +41,21 @@ func (q *Queries) LockConversation(ctx context.Context, id string) (model.Conver
 	return scanConversation(q.db.QueryRowContext(ctx, "SELECT conversation_id, kind, title, created_at, dissolved_at FROM conversations WHERE conversation_id = ? FOR UPDATE", id))
 }
 
-func (q *Queries) ListConversationIDs(ctx context.Context, participantID string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, "SELECT conversation_id FROM conversation_members WHERE participant_id = ? ORDER BY conversation_id", participantID)
+func (q *Queries) ListConversationMemberships(ctx context.Context, participantID string) ([]model.Membership, error) {
+	rows, err := q.db.QueryContext(ctx, "SELECT conversation_id, participant_id, created_at, hidden FROM conversation_members WHERE participant_id = ? ORDER BY conversation_id", participantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	ids := []string{}
+	memberships := []model.Membership{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		membership, err := scanMembership(rows)
+		if err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		memberships = append(memberships, membership)
 	}
-	return ids, rows.Err()
+	return memberships, rows.Err()
 }
 
 func (q *Queries) InsertConversation(ctx context.Context, kind string, title *string, createdAt int64) (model.Conversation, error) {

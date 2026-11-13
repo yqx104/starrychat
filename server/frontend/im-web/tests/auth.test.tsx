@@ -9,7 +9,7 @@ import { App } from '../src/app/App';
 const human: Participant = { participant_id: testID(1), kind: 'human', name: '小语', created_at: 1 };
 const other: Participant = { participant_id: testID(9), kind: 'human', name: '另一账号', created_at: 1 };
 const agent: Participant = { participant_id: testID(2), kind: 'agent', name: 'Mia', created_at: 1 };
-const chat: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 10, dissolved_at: null };
+const chat: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 10, dissolved_at: null, hidden: false };
 const message = (id: number, content: string, sender = 1): Message => ({ message_seq: id, message_id: testID(id), conversation_id: testID(11), sender_id: testID(sender), content, created_at: 1700000000000, mentioned_agent_ids: [], quoted_message_id: null });
 const expired = new ApiError('登录已过期', 'UNAUTHORIZED', 401);
 function workspace() {

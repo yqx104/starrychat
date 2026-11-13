@@ -12,8 +12,8 @@ const people: Participant[] = [
   { participant_id: testID(3), kind: 'agent', name: 'Atlas', created_at: 1 },
   { participant_id: testID(4), kind: 'agent', name: 'Kai', created_at: 1 },
 ];
-const group: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 100, dissolved_at: null };
-const other: Conversation = { conversation_id: testID(22), kind: 'direct', title: 'Beta', created_at: 90, dissolved_at: null };
+const group: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 100, dissolved_at: null, hidden: false };
+const other: Conversation = { conversation_id: testID(22), kind: 'direct', title: 'Beta', created_at: 90, dissolved_at: null, hidden: false };
 const msg = (id: number, content: string, conv = 11, quote: number | null = null): Message => ({ message_seq: id, message_id: testID(id), conversation_id: testID(conv), sender_id: testID(2), content, created_at: 1700000000000, mentioned_agent_ids: [], quoted_message_id: quote === null ? null : testID(quote) });
 function basic(conversations = [group]) {
   vi.spyOn(api, 'me').mockResolvedValue(people[0]);
@@ -83,9 +83,9 @@ describe('chat flows', () => {
     let resolveOld!: (page: MessagePage) => void; let oldSignal: AbortSignal | undefined;
     vi.spyOn(api, 'messages').mockImplementation((id, _query, signal) => id === testID(11) ? new Promise((resolve) => { oldSignal = signal; resolveOld = resolve; }) : Promise.resolve({ messages: [msg(10, '新会话内容', 22)], has_more: false }));
     const user = userEvent.setup(); render(<App />);
-    await screen.findByRole('button', { name: /Beta/ });
+    await screen.findByRole('button', { name: /^Beta/ });
     await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
-    await user.click(screen.getByRole('button', { name: /Beta/ }));
+    await user.click(screen.getByRole('button', { name: /^Beta/ }));
     expect(await screen.findByText('新会话内容')).toBeTruthy();
     expect(oldSignal?.aborted).toBe(true);
     resolveOld({ messages: [msg(4, '旧会话内容')], has_more: false });
@@ -103,6 +103,7 @@ describe('chat flows', () => {
     const details = screen.getByRole('complementary', { name: '会话详情' });
     expect(within(details).queryByRole('button', { name: /移除|编辑|解散群聊|加入/ })).toBeNull();
     await user.click(within(details).getByRole('button', { name: '关闭会话详情' }));
+    await user.click(screen.getByRole('button', { name: '群聊' }));
     await user.click(screen.getByRole('button', { name: '创建群聊' }));
     const dialog = screen.getByRole('dialog', { name: '创建群聊' });
     await user.type(within(dialog).getByLabelText('群聊名称'), '项目组');

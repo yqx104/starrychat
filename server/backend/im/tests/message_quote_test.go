@@ -75,7 +75,7 @@ func TestCreationTimesAndQuotesInResponses(t *testing.T) {
 	// Member responses remain participants; their created_at is not a join timestamp.
 	assertJSON(t, serve(h, request("GET", "/conversations/00000000-0000-7000-8000-000000000007/members", "")), 200, map[string]any{"members": []any{participantJSON}})
 	assertJSON(t, serve(h, request("GET", "/conversations/00000000-0000-7000-8000-000000000007", "")), 200, map[string]any{
-		"conversation": map[string]any{"conversation_id": testID(7), "kind": "group", "title": "Team", "created_at": int64(1700000000100), "dissolved_at": nil},
+		"conversation": map[string]any{"conversation_id": testID(7), "kind": "group", "title": "Team", "created_at": int64(1700000000100), "dissolved_at": nil, "hidden": false},
 	})
 	assertJSON(t, serve(h, request("GET", "/conversations/00000000-0000-7000-8000-000000000007/messages", "")), 200, map[string]any{
 		"messages": []any{

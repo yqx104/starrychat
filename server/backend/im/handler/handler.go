@@ -50,6 +50,9 @@ func New(service Service) *Handler {
 		{regexp.MustCompile(`^/conversations/([^/]+)/dissolve/?$`), "POST", map[string]operation{
 			"POST": {nil, h.dissolveGroup},
 		}},
+		{regexp.MustCompile(`^/conversations/([^/]+)/visibility/?$`), "PATCH", map[string]operation{
+			"PATCH": {nil, h.setConversationVisibility},
+		}},
 		{regexp.MustCompile(`^/conversations/([^/]+)/members/?$`), "GET, POST", map[string]operation{
 			"GET": {nil, h.listMembers}, "POST": {nil, h.addMember},
 		}},

@@ -25,6 +25,7 @@ export interface Conversation {
   title: string | null;
   created_at: number;
   dissolved_at: number | null;
+  hidden: boolean;
 }
 
 export interface Message {

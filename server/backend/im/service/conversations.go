@@ -14,12 +14,13 @@ func (s *Service) ListConversations(ctx context.Context, caller model.RequestCon
 		if err != nil {
 			return nil, err
 		}
-		ids, err := q.ListConversationIDs(ctx, caller.ParticipantID)
+		memberships, err := q.ListConversationMemberships(ctx, caller.ParticipantID)
 		if err != nil {
 			return nil, err
 		}
-		conversations := make([]model.Conversation, 0, len(ids))
-		for _, id := range ids {
+		conversations := make([]model.Conversation, 0, len(memberships))
+		for _, membership := range memberships {
+			id := membership.ConversationID
 			owned, err := conversationOwnedBy(ctx, q, id, ownerID)
 			if err != nil {
 				return nil, err
@@ -31,6 +32,7 @@ func (s *Service) ListConversations(ctx context.Context, caller model.RequestCon
 			if err != nil {
 				return nil, err
 			}
+			conversation.Hidden = membership.Hidden
 			conversations = append(conversations, conversation)
 		}
 		return conversations, nil
@@ -83,11 +85,12 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 		if err != nil {
 			return model.Conversation{}, err
 		}
-		ids, err := q.ListConversationIDs(ctx, human.ParticipantID)
+		memberships, err := q.ListConversationMemberships(ctx, human.ParticipantID)
 		if err != nil {
 			return model.Conversation{}, err
 		}
-		for _, id := range ids {
+		for _, membership := range memberships {
+			id := membership.ConversationID
 			conversation, err := q.GetConversation(ctx, id)
 			if err != nil {
 				return conversation, err
@@ -104,6 +107,11 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 			}
 			for _, member := range members {
 				if member.ParticipantID == agent.ParticipantID {
+					if membership.Hidden {
+						if err := q.SetMembershipHidden(ctx, id, human.ParticipantID, false); err != nil {
+							return model.Conversation{}, err
+						}
+					}
 					return conversation, nil
 				}
 			}
@@ -126,6 +134,20 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 func (s *Service) GetConversation(ctx context.Context, caller model.RequestContext, id string) (model.Conversation, error) {
 	return read(ctx, s, func(q *repository.Queries) (model.Conversation, error) {
 		return accessibleConversation(ctx, q, caller, id, false)
+	})
+}
+
+func (s *Service) SetConversationVisibility(ctx context.Context, caller model.RequestContext, input model.SetConversationVisibilityInput) (model.Conversation, error) {
+	return write(ctx, s, func(q *repository.Queries) (model.Conversation, error) {
+		conversation, err := accessibleConversation(ctx, q, caller, input.ConversationID, true)
+		if err != nil {
+			return model.Conversation{}, err
+		}
+		if err := q.SetMembershipHidden(ctx, input.ConversationID, caller.ParticipantID, input.Hidden); err != nil {
+			return model.Conversation{}, err
+		}
+		conversation.Hidden = input.Hidden
+		return conversation, nil
 	})
 }
 

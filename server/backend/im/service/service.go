@@ -128,12 +128,12 @@ func accessibleConversation(ctx context.Context, q *repository.Queries, caller m
 	if err != nil {
 		return conversation, err
 	}
-	member, err := memberExists(ctx, q, id, caller.ParticipantID)
+	membership, err := q.GetMembership(ctx, id, caller.ParticipantID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return conversation, businessError("FORBIDDEN", "Caller is not a member of this conversation.")
+	}
 	if err != nil {
 		return conversation, err
-	}
-	if !member {
-		return conversation, businessError("FORBIDDEN", "Caller is not a member of this conversation.")
 	}
 	owned, err := conversationOwnedBy(ctx, q, id, ownerID)
 	if err != nil {
@@ -142,6 +142,7 @@ func accessibleConversation(ctx context.Context, q *repository.Queries, caller m
 	if !owned {
 		return model.Conversation{}, businessError("FORBIDDEN", "Conversation belongs to another human.")
 	}
+	conversation.Hidden = membership.Hidden
 	return conversation, nil
 }
 

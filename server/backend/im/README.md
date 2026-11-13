@@ -120,6 +120,16 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 
 `GET /participants` 的响应格式不变。真人只能看到自己和自己的 Agent；Agent 只能看到所属真人及同主 Agent。创建单聊、拉群、加人、移除和 @ 也校验相同 owner。会话列表及历史仍要求成员身份，不提供跨真人共享群。已有 `/auth/register` 的 agent 分支执行同样的 owner 校验。
 
+## 会话列表与个人显示状态
+
+`conversation_members.hidden` 是默认 `false` 的布尔值，表示该成员是否从自己的消息列表隐藏会话。会话对象的 `hidden` 字段由 Service 从当前调用者的成员记录组装；列表、详情、改名和解散响应都返回调用者自己的值。
+
+`GET /conversations` 继续返回当前用户有权访问的全部会话，包括隐藏会话。SQL 和 Service 不按 `hidden` 过滤，由前端决定消息列表和群聊列表的展示范围。
+
+`PATCH /conversations/{conversation_id}/visibility` 接受 `{"hidden": true}` 或 `{"hidden": false}`，返回 `200 {conversation}`。必须提供布尔值，只更新认证调用者自己的成员记录，不接受指定其他成员。重复设置同一值可以安全重试；已解散群也可以隐藏和恢复，以查看历史。
+
+`POST /conversations/direct` 会找到并恢复已有单聊，保留原会话 ID 和历史消息；首次打开时创建默认可见的单聊。隐藏、恢复和重新打开已有单聊不改变成员关系，不删除消息，也不产生 Trigger 待同步事件。新消息不会自动恢复隐藏状态；当前通过通讯录点击 Agent 或通过群聊列表点击群恢复显示。
+
 ## Trigger 同步
 
 `Service.trigger` 的类型为 `TriggerClient`，由 `cmd` 注入 `*triggerclient.Client`，统一提供 `RegisterAgent`、`Subscribe`、`Unsubscribe`、`ClearChannel`、`SendMessage`。HTTP 调用均有五秒超时，不跟随重定向。IM 使用自己的 DTO，不导入 Trigger 的业务包。
@@ -143,6 +153,8 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 已有数据库需要改表时，先用 `localdeploy/im/stop.sh` 停止 IM 并保留独立的 MySQL 运行，将需要保留的数据备份到仓库外，再在本机直接执行所需 SQL。同步更新 `sql/schema.sql` 和受影响的服务代码，再用 `localdeploy/im/start.sh` 重新构建、启动最新服务并验证。
 
 `sql/schema.sql` 保存当前完整表结构，供阅读和新建空库使用。仓库不维护迁移脚本或自动改表流程，启动脚本不执行 SQL。
+
+启用个人会话隐藏前，已有库需要为 `conversation_members` 补充 `hidden BOOLEAN NOT NULL DEFAULT FALSE CHECK (hidden IN (0, 1))`；原有成员默认可见。IM 启动会检查该字段，应用不自动改表。
 
 启用 Trigger 同步前，需要按 `sql/schema.sql` 创建 `trigger_outbox` 表。若已创建旧版 outbox，需要允许 `conversation_id` 为 NULL，并更新事件类型及会话关联约束以支持 `register_agent`。应用不会自动建表或改表。Trigger 库结构不变。
 
