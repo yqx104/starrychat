@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -94,9 +95,12 @@ func TestIMTriggerSyncEndToEnd(t *testing.T) {
 	defer im.Close()
 	startSync := func(s *imService.Service) func() {
 		ctx, cancel := context.WithCancel(t.Context())
-		done := make(chan struct{})
-		go func() { defer close(done); s.RunTriggerSync(ctx) }()
-		stop := func() { cancel(); <-done }
+		var workers sync.WaitGroup
+		for range 4 {
+			workers.Add(1)
+			go func() { defer workers.Done(); s.RunTriggerSync(ctx) }()
+		}
+		stop := func() { cancel(); workers.Wait() }
 		t.Cleanup(stop)
 		return stop
 	}

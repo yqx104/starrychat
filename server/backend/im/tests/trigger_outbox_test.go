@@ -26,15 +26,15 @@ type triggerCall struct {
 type recordingTrigger struct {
 	mu    sync.Mutex
 	calls []triggerCall
-	hook  func(triggerCall) error
+	hook  func(context.Context, triggerCall) error
 }
 
-func (r *recordingTrigger) record(call triggerCall) error {
+func (r *recordingTrigger) record(ctx context.Context, call triggerCall) error {
 	r.mu.Lock()
 	r.calls = append(r.calls, call)
 	r.mu.Unlock()
 	if r.hook != nil {
-		return r.hook(call)
+		return r.hook(ctx, call)
 	}
 	return nil
 }
@@ -45,24 +45,24 @@ func (r *recordingTrigger) snapshot() []triggerCall {
 	return slices.Clone(r.calls)
 }
 
-func (r *recordingTrigger) RegisterAgent(_ context.Context, id string) error {
-	return r.record(triggerCall{operation: "register", agentID: id})
+func (r *recordingTrigger) RegisterAgent(ctx context.Context, id string) error {
+	return r.record(ctx, triggerCall{operation: "register", agentID: id})
 }
 
-func (r *recordingTrigger) Subscribe(_ context.Context, input model.TriggerSubscription) error {
-	return r.record(triggerCall{operation: "subscribe", source: input.TriggerSource, subscription: input})
+func (r *recordingTrigger) Subscribe(ctx context.Context, input model.TriggerSubscription) error {
+	return r.record(ctx, triggerCall{operation: "subscribe", source: input.TriggerSource, subscription: input})
 }
 
-func (r *recordingTrigger) Unsubscribe(_ context.Context, source model.TriggerSource, id string) error {
-	return r.record(triggerCall{operation: "unsubscribe", source: source, agentID: id})
+func (r *recordingTrigger) Unsubscribe(ctx context.Context, source model.TriggerSource, id string) error {
+	return r.record(ctx, triggerCall{operation: "unsubscribe", source: source, agentID: id})
 }
 
-func (r *recordingTrigger) ClearChannel(_ context.Context, source model.TriggerSource) error {
-	return r.record(triggerCall{operation: "clear", source: source})
+func (r *recordingTrigger) ClearChannel(ctx context.Context, source model.TriggerSource) error {
+	return r.record(ctx, triggerCall{operation: "clear", source: source})
 }
 
-func (r *recordingTrigger) SendMessage(_ context.Context, message model.TriggerMessage) error {
-	return r.record(triggerCall{operation: "message", source: model.TriggerSource{ChannelType: message.ChannelType, ConversationID: message.ConversationID}, message: message})
+func (r *recordingTrigger) SendMessage(ctx context.Context, message model.TriggerMessage) error {
+	return r.record(ctx, triggerCall{operation: "message", source: model.TriggerSource{ChannelType: message.ChannelType, ConversationID: message.ConversationID}, message: message})
 }
 
 func drainTrigger(t *testing.T, s *service.Service) {
@@ -101,7 +101,7 @@ func TestTriggerOutbox(t *testing.T) {
 			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox WHERE operation='register_agent' AND conversation_id IS NULL AND JSON_LENGTH(payload)=1 AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.agent_id'))=?", id), int64(1))
 			responseValue[handler.ErrorResponse](t, f.call("POST", route.path, input, authRequest{bearer: owner.Token}), 409)
 			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(1))
-			client.hook = func(call triggerCall) error {
+			client.hook = func(_ context.Context, call triggerCall) error {
 				if call.agentID == id {
 					return errors.New("Trigger unavailable")
 				}
@@ -256,7 +256,7 @@ func TestTriggerOutbox(t *testing.T) {
 		second := f.send(t, a.ConversationID, "two", f.human)
 		other := f.send(t, b.ConversationID, "other", f.human)
 		var failed atomic.Bool
-		client.hook = func(call triggerCall) error {
+		client.hook = func(_ context.Context, call triggerCall) error {
 			if call.message.MessageID == first.MessageID && !failed.Swap(true) {
 				return errors.New("response lost after Trigger accepted the message")
 			}
@@ -341,7 +341,7 @@ func TestTriggerOutbox(t *testing.T) {
 		started, release := make(chan struct{}), make(chan struct{})
 		var once sync.Once
 		defer once.Do(func() { close(release) })
-		client := &recordingTrigger{hook: func(call triggerCall) error {
+		client := &recordingTrigger{hook: func(_ context.Context, call triggerCall) error {
 			if call.operation == "register" && call.agentID == f.alpha.ParticipantID {
 				close(started)
 				<-release

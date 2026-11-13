@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,8 @@ import (
 	"starrychat/backend/im/service"
 	"starrychat/backend/im/triggerclient"
 )
+
+const triggerSyncWorkers = 4
 
 func main() {
 	defaultConfig := os.Getenv("IM_CONFIG")
@@ -75,12 +78,15 @@ func run(ctx context.Context, path string, bind bool) error {
 	}
 	server := &http.Server{Handler: api, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	syncContext, stopSync := context.WithCancel(ctx)
-	syncDone := make(chan struct{})
-	go func() {
-		defer close(syncDone)
-		s.RunTriggerSync(syncContext)
-	}()
-	defer func() { stopSync(); <-syncDone }()
+	var syncWorkers sync.WaitGroup
+	for range triggerSyncWorkers {
+		syncWorkers.Add(1)
+		go func() {
+			defer syncWorkers.Done()
+			s.RunTriggerSync(syncContext)
+		}()
+	}
+	defer func() { stopSync(); syncWorkers.Wait() }()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	fmt.Fprintf(os.Stdout, "IM 已就绪：http://%s\n", listener.Addr())
