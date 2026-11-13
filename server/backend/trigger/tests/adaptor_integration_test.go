@@ -193,9 +193,10 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	store, sockets, trigger := startTrigger("")
 	agent := authJSON(t, imURL, "POST", "/agents", humanToken, map[string]any{"username": "agent", "password": password, "name": "Pi Agent"}, 201)["agent"].(map[string]any)
 	agentID := agent["participant_id"].(string)
-	if _, err := store.GetAgent(t.Context(), agentID); err != nil {
-		t.Fatalf("Agent was not registered before Adaptor connected: %v", err)
-	}
+	eventually(t, "Agent registered through IM outbox", func() bool {
+		_, err := store.GetAgent(t.Context(), agentID)
+		return err == nil
+	})
 	triggerURL := trigger.URL
 	wsURL := "ws" + strings.TrimPrefix(triggerURL, "http") + "/agent-connections"
 	backend, err := filepath.Abs("../../../../client/adaptor/backend")
