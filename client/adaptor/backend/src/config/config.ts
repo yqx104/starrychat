@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export interface Config {
   address: string;
@@ -7,6 +8,8 @@ export interface Config {
   trigger_ws_url: string;
   adaptor_id: string;
   sqlite_path: string;
+  data_root?: string;
+  pi_cli_path?: string;
 }
 
 export function loadConfig(path: string): Config {
@@ -22,5 +25,11 @@ export function loadConfig(path: string): Config {
       !['ws:', 'wss:'].includes(new URL(config.trigger_ws_url).protocol)) throw new Error('服务地址协议无效');
   config.im_base_url = config.im_base_url.replace(/\/$/, '');
   config.sqlite_path = resolve(dirname(path), config.sqlite_path);
+  for (const key of ['data_root', 'pi_cli_path'] as const) {
+    if (config[key] !== undefined && (typeof config[key] !== 'string' || !config[key])) throw new Error(`配置 ${key} 无效`);
+  }
+  config.data_root = resolve(dirname(path), config.data_root ?? 'runtime');
+  config.pi_cli_path = config.pi_cli_path ? resolve(dirname(path), config.pi_cli_path) :
+    fileURLToPath(new URL('../../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url));
   return config;
 }

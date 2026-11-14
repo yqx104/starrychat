@@ -2,9 +2,14 @@
   "name": "starrychat",
   "version": "0.0.0",
   "private": true,
+  "scripts": {
+    "build:adaptor": "npm run build:offline --workspace=@starrychat/pi-upstream && npm run build --workspace=@starrychat/pi-adaptor && npm run build --workspace=@starrychat/adaptor-backend && npm run build --workspace=@starrychat/adaptor-web",
+    "test:adaptor": "npm test --workspace=@starrychat/pi-adaptor && npm test --workspace=@starrychat/adaptor-backend"
+  },
   "workspaces": [
     "server/frontend/*",
     "client/adaptor/*",
+    "client/pi-adaptor",
     "agents/*",
     "agents/pi/upstream",
     "agents/pi/upstream/packages/schema",

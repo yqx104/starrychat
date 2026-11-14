@@ -7,8 +7,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { WebSocketServer } from 'ws';
-import { Store, publicAgent, type Delivery } from '../src/store.ts';
-import { Connections } from '../src/connections.ts';
+import { Store } from '../src/repository/store.ts';
+import { publicAgent } from '../src/service/agents.ts';
+import type { Delivery } from '../src/model/types.ts';
+import { Connections } from '../src/service/connections.ts';
 
 async function until(condition: () => boolean) {
   for (let i = 0; i < 120; i++) { if (condition()) return; await delay(50); }
@@ -44,7 +46,8 @@ test('ACK follows committed SQLite write; failed writes replay; duplicate receip
     socket.send(JSON.stringify({ type: 'delivery', ...item }));
   });
   const config = { address: '127.0.0.1:4183', adaptor_id: 'test', im_base_url: 'http://localhost', trigger_ws_url: `ws://127.0.0.1:${address.port}`, sqlite_path: path };
-  let connections = new Connections(store, config);
+  let wakeups = 0;
+  let connections = new Connections(store, config, () => { wakeups++; throw new Error('dispatch unavailable'); });
   t.after(() => { connections.close(); store.close(); });
   connections.startAll();
   await until(() => disconnected);
@@ -54,6 +57,8 @@ test('ACK follows committed SQLite write; failed writes replay; duplicate receip
   await until(() => acks === 1);
   for (const socket of server.clients) socket.send(JSON.stringify({ type: 'delivery', ...item }));
   await until(() => acks === 2);
+  assert.equal(wakeups, 1);
+  assert.equal(connections.status('agent-a').connection_state, 'online');
   assert.equal(store.inbox('agent-a', Number.MAX_SAFE_INTEGER, 50).messages.length, 1);
   assert(!('token' in publicAgent(store.agent('agent-a')!)));
   connections.close(); store.close();

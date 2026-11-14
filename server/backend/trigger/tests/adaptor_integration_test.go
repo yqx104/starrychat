@@ -210,10 +210,10 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	address := listener.Addr().String()
 	listener.Close()
 	config := writeConfig("adaptor.json", map[string]any{"address": address, "im_base_url": imURL, "trigger_ws_url": wsURL, "adaptor_id": newID(t), "sqlite_path": filepath.Join(directory, "adaptor.sqlite")})
-	if output, err := exec.CommandContext(t.Context(), "node", filepath.Join(backend, "src/init-db.ts"), config).CombinedOutput(); err != nil {
+	if output, err := exec.CommandContext(t.Context(), "node", filepath.Join(backend, "src/cmd/init-db.ts"), config).CombinedOutput(); err != nil {
 		t.Fatalf("init sqlite: %v %s", err, output)
 	}
-	clientURL, stopClient := startChild(t, exec.Command("node", filepath.Join(backend, "src/main.ts"), config), "Adaptor 已就绪：")
+	clientURL, stopClient := startChild(t, exec.Command("node", filepath.Join(backend, "src/cmd/main.ts"), config), "Adaptor 已就绪：")
 	authJSON(t, clientURL, "POST", "/agents", "", map[string]string{"username": "human", "password": password}, 400)
 	added := authJSON(t, clientURL, "POST", "/agents", "", map[string]string{"username": "agent", "password": password}, 201)["agent"].(map[string]any)
 	if added["agent_id"] != agentID || added["token"] != nil {
@@ -307,7 +307,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	eventually(t, "offline message after Trigger restart", func() bool { return len(inbox()) == 2 })
 	stopClient()
 	message(3)
-	clientURL, _ = startChild(t, exec.Command("node", filepath.Join(backend, "src/main.ts"), config), "Adaptor 已就绪：")
+	clientURL, _ = startChild(t, exec.Command("node", filepath.Join(backend, "src/cmd/main.ts"), config), "Adaptor 已就绪：")
 	eventually(t, "client restart restores credentials and receipts", func() bool {
 		_, err := store.NextDelivery(t.Context(), agentID, subscription.ChannelID)
 		return len(inbox()) == 3 && errors.Is(err, sql.ErrNoRows)
@@ -376,6 +376,60 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		channels, err := store.ListChannels(t.Context(), groupSource)
 		return err == nil && len(channels) == 0
 	})
+
+	// Extend the real IM -> Trigger -> Node chain through the repository's Pi RPC process.
+	// Only the model endpoint is local and deterministic; no personal credentials are used.
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"id\":\"local\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"local-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"cross-service verified\"},\"finish_reason\":null}]}\n\n")
+		fmt.Fprint(w, "data: {\"id\":\"local\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"local-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer modelServer.Close()
+	piConfig := filepath.Join(directory, "pi-config")
+	if err := os.Mkdir(piConfig, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig("pi-config/models.json", map[string]any{"providers": map[string]any{"local-adaptor-test": map[string]any{
+		"baseUrl": modelServer.URL + "/v1", "api": "openai-completions", "apiKey": "local-test-only",
+		"models": []any{map[string]any{"id": "local-model", "contextWindow": 128000, "maxTokens": 1024}},
+	}}})
+	writeConfig("pi-config/settings.json", map[string]any{"retry": map[string]bool{"enabled": false}, "compaction": map[string]bool{"enabled": false}})
+	authJSON(t, clientURL, "PATCH", "/agents/"+agentID+"/runtime", "", map[string]any{
+		"harness": "pi", "cwd": directory, "config": map[string]string{"pi_config_dir": piConfig, "provider": "local-adaptor-test", "model": "local-model"},
+	}, 200)
+	mainSession := func() map[string]any {
+		return authJSON(t, clientURL, "GET", "/agents/"+agentID+"/main-session", "", nil, 200)
+	}
+	eventually(t, "backlog accepted by real Pi RPC", func() bool {
+		if mainSession()["status"] != "idle" {
+			return false
+		}
+		for _, item := range inbox() {
+			if item.(map[string]any)["state"] != "accepted" {
+				return false
+			}
+		}
+		return true
+	})
+	logicalSession := mainSession()["session"].(map[string]any)["session_id"].(string)
+	message(5)
+	eventually(t, "new IM message executes and Pi output returns to adaptor", func() bool {
+		items := inbox()
+		if len(items) != 6 || items[0].(map[string]any)["state"] != "accepted" || mainSession()["status"] != "idle" {
+			return false
+		}
+		events := authJSON(t, clientURL, "GET", "/sessions/"+logicalSession+"/events", "", nil, 200)
+		data, _ := json.Marshal(events)
+		return bytes.Contains(data, []byte("cross-service verified")) && !bytes.Contains(data, []byte("local-test-only"))
+	})
+	authJSON(t, clientURL, "POST", "/agents/"+agentID+"/reauthenticate", "", map[string]string{"username": "agent", "password": password}, 200)
+	if mainSession()["session"].(map[string]any)["session_id"] != logicalSession {
+		t.Fatal("reauthentication replaced the main Pi session")
+	}
 
 	// A connected socket must not remain authorized beyond its validated expiry.
 	shortID := newID(t)

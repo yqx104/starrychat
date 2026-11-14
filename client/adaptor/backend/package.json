@@ -5,11 +5,11 @@
   "type": "module",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js",
-    "db:init": "node src/init-db.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "start": "node dist/cmd/main.js",
+    "db:init": "node src/cmd/init-db.ts",
     "test": "node --test tests/*.test.ts"
   },
-  "dependencies": { "ws": "8.22.1" },
+  "dependencies": { "ws": "8.22.1", "@starrychat/pi-adaptor": "file:../../pi-adaptor" },
   "devDependencies": { "@types/node": "22.19.19", "@types/ws": "8.18.1", "typescript": "7.0.2" }
 }

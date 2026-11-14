@@ -1,10 +1,4 @@
-export class APIError extends Error {
-  status: number;
-  code: string;
-  constructor(status: number, code: string, message: string) {
-    super(message); this.status = status; this.code = code;
-  }
-}
+import { APIError } from '../model/errors.ts';
 
 export async function login(base: string, username: string, password: string) {
   let response: Response;
