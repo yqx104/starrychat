@@ -89,8 +89,8 @@ func (f *authFixture) call(method, path string, body any, options ...authRequest
 	return w
 }
 
-func registration(username, kind string) map[string]any {
-	return map[string]any{"username": username, "password": testPassword, "name": "Test " + username, "kind": kind}
+func registration(username string) map[string]any {
+	return map[string]any{"username": username, "password": testPassword, "name": "Test " + username}
 }
 func loginBody(username, transport string) map[string]any {
 	return map[string]any{"username": username, "password": testPassword, "transport": transport}
@@ -98,7 +98,7 @@ func loginBody(username, transport string) map[string]any {
 
 func (f *authFixture) humanLogin(t *testing.T) loginResult {
 	t.Helper()
-	responseValue[map[string]any](t, f.call("POST", "/auth/register", registration("owner", "human")), 201)
+	responseValue[map[string]any](t, f.call("POST", "/auth/register", registration("owner")), 201)
 	return responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("owner", "bearer")), 200)
 }
 
@@ -113,7 +113,7 @@ func TestMySQLAuthentication(t *testing.T) {
 	instance := startMySQL(t)
 	t.Run("registration_is_atomic_and_never_exposes_credentials", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
-		w := f.call("POST", "/auth/register", registration("owner", "human"))
+		w := f.call("POST", "/auth/register", registration("owner"))
 		created := responseValue[struct {
 			Participant model.Participant `json:"participant"`
 		}](t, w, 201).Participant
@@ -131,35 +131,41 @@ func TestMySQLAuthentication(t *testing.T) {
 			t.Fatal("stored password differs from registration input")
 		}
 		equalValue(t, account.ParticipantID, created.ParticipantID)
-		assertError(t, f.call("POST", "/auth/register", registration("owner", "human")), 409, "CONFLICT")
+		equalValue(t, created.Kind, model.Human)
+		equalValue(t, account.Kind, model.Human)
+		if account.OwnerParticipantID != nil {
+			t.Fatal("registered human has an owner")
+		}
+		for _, table := range []string{"conversations", "conversation_members", "trigger_outbox"} {
+			equalValue(t, f.count(t, "SELECT COUNT(*) FROM "+table), int64(0))
+		}
+		assertError(t, f.call("POST", "/auth/register", registration("owner")), 409, "CONFLICT")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants"), int64(1))
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts"), int64(1))
 		owner := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("owner", "bearer")), 200)
-		assertError(t, f.call("POST", "/auth/register", registration("owner", "agent"), authRequest{bearer: owner.Token}), 409, "CONFLICT")
+		assertError(t, f.call("POST", "/agents", registration("owner"), authRequest{bearer: owner.Token}), 409, "CONFLICT")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants"), int64(1))
-		input := registration("agent", "agent")
+		input := registration("another-human")
 		input["participant_id"] = created.ParticipantID
 		assertError(t, f.call("POST", "/auth/register", input, authRequest{bearer: owner.Token}), 400, "INVALID_REQUEST")
 	})
-	t.Run("agents_require_human_and_registration_keeps_callers_identity", func(t *testing.T) {
+	t.Run("agents_require_human_and_creation_keeps_callers_identity", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
 		owner := f.humanLogin(t)
-		assertError(t, f.call("POST", "/auth/register", registration("alpha", "agent")), 401, "UNAUTHORIZED")
-		w := f.call("POST", "/auth/register", registration("alpha", "agent"), authRequest{cookie: owner.Token, origin: "http://localhost:4180"})
-		agent := responseValue[struct {
-			Participant model.Participant `json:"participant"`
-		}](t, w, 201).Participant
+		assertError(t, f.call("POST", "/agents", registration("alpha")), 401, "UNAUTHORIZED")
+		w := f.call("POST", "/agents", registration("alpha"), authRequest{cookie: owner.Token, origin: "http://localhost:4180"})
+		agent := responseValue[model.CreateAgentResult](t, w, 201).Agent
 		cookies := w.Result().Cookies()
 		if len(cookies) != 1 {
 			t.Fatal("authenticated human was not renewed")
 		}
 		id, err := f.tokens.Verify(cookies[0].Value)
 		if err != nil || id != owner.Participant.ParticipantID || id == agent.ParticipantID {
-			t.Fatal("registration switched identity")
+			t.Fatal("agent creation switched identity")
 		}
 		logged := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
-		equalValue(t, logged.Participant, agent)
-		assertError(t, f.call("POST", "/auth/register", registration("nested", "agent"), authRequest{bearer: logged.Token}), 403, "FORBIDDEN")
+		equalValue(t, logged.Participant, model.Participant{ParticipantID: agent.ParticipantID, Kind: model.Agent, Name: agent.Name, CreatedAt: agent.CreatedAt})
+		assertError(t, f.call("POST", "/agents", registration("nested"), authRequest{bearer: logged.Token}), 403, "FORBIDDEN")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants"), int64(2))
 	})
 	t.Run("login_failure_does_not_renew_old_credentials", func(t *testing.T) {
@@ -286,8 +292,8 @@ func TestMySQLAuthentication(t *testing.T) {
 	})
 	t.Run("credential_validation_no_cache_and_repeated_login_requests", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
-		for _, change := range []map[string]any{{"username": "x"}, {"username": "bad name"}, {"password": "short"}, {"password": strings.Repeat("x", 73)}, {"kind": "admin"}, {"name": strings.Repeat("人", 101)}, {"unknown": true}} {
-			body := registration("owner", "human")
+		for _, change := range []map[string]any{{"username": "x"}, {"username": "bad name"}, {"password": "short"}, {"password": strings.Repeat("x", 73)}, {"kind": "agent"}, {"kind": "human"}, {"name": strings.Repeat("人", 101)}, {"unknown": true}} {
+			body := registration("owner")
 			for k, v := range change {
 				body[k] = v
 			}
@@ -303,7 +309,7 @@ func TestMySQLAuthentication(t *testing.T) {
 				t.Fatal("login response must not be cached")
 			}
 		}
-		responseValue[map[string]any](t, f.call("POST", "/auth/register", registration("owner", "human")), 201)
+		responseValue[map[string]any](t, f.call("POST", "/auth/register", registration("owner")), 201)
 	})
 	t.Run("parallel_logins_all_succeed", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
@@ -329,7 +335,7 @@ func TestMySQLAuthentication(t *testing.T) {
 		for _, s := range services {
 			workers.Go(func() {
 				<-start
-				_, err := s.Register(t.Context(), model.RequestContext{}, model.RegisterInput{Username: "same-human", Password: testPassword, Name: "Human", Kind: model.Human})
+				_, err := s.Register(t.Context(), model.RegisterInput{Username: "same-human", Password: testPassword, Name: "Human"})
 				results <- err
 			})
 		}
@@ -354,7 +360,7 @@ func TestMySQLAuthentication(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		attempt := registration("owner", "human")
+		attempt := registration("owner")
 		attempt["participant_id"] = p.ParticipantID
 		assertError(t, f.call("POST", "/auth/register", attempt), 400, "INVALID_REQUEST")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts"), int64(0))
@@ -372,7 +378,7 @@ func TestMySQLAuthentication(t *testing.T) {
 	t.Run("authenticated_parallel_business_requests_keep_identity_and_commit", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
 		owner := f.humanLogin(t)
-		responseValue[map[string]any](t, f.call("POST", "/auth/register", registration("alpha", "agent"), authRequest{bearer: owner.Token}), 201)
+		f.createAgent(t, owner, "alpha")
 		agent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
 		group := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations", map[string]any{"title": "Authenticated", "agent_ids": []string{agent.Participant.ParticipantID}}, authRequest{bearer: owner.Token}), 201).Conversation
 		responses := parallelResponses(t, 32, func(_ context.Context, i int) *httptest.ResponseRecorder {

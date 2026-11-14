@@ -116,19 +116,22 @@ func (s *Service) OpenDirect(ctx context.Context, caller model.RequestContext, i
 				}
 			}
 		}
-		now := time.Now().UnixMilli()
-		conversation, err := q.InsertConversation(ctx, "direct", nil, now)
-		if err != nil {
+		return createDirect(ctx, q, human.ParticipantID, agent.ParticipantID, time.Now().UnixMilli())
+	})
+}
+
+func createDirect(ctx context.Context, q *repository.Queries, humanID, agentID string, now int64) (model.Conversation, error) {
+	conversation, err := q.InsertConversation(ctx, "direct", nil, now)
+	if err != nil {
+		return conversation, err
+	}
+	for _, id := range []string{humanID, agentID} {
+		if err := q.InsertMember(ctx, conversation.ConversationID, id, now); err != nil {
 			return conversation, err
 		}
-		for _, id := range []string{human.ParticipantID, agent.ParticipantID} {
-			if err := q.InsertMember(ctx, conversation.ConversationID, id, now); err != nil {
-				return conversation, err
-			}
-		}
-		subscription := model.TriggerSubscription{TriggerSource: triggerSource(conversation), AgentIDs: []string{agent.ParticipantID}}
-		return conversation, q.EnqueueTrigger(ctx, &conversation.ConversationID, model.TriggerSubscribe, subscription)
-	})
+	}
+	subscription := model.TriggerSubscription{TriggerSource: triggerSource(conversation), AgentIDs: []string{agentID}}
+	return conversation, q.EnqueueTrigger(ctx, &conversation.ConversationID, model.TriggerSubscribe, subscription)
 }
 
 func (s *Service) GetConversation(ctx context.Context, caller model.RequestContext, id string) (model.Conversation, error) {

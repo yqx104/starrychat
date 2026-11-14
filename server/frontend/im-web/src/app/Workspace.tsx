@@ -43,10 +43,14 @@ export function Workspace({ user, active, onLogout }: { user: Participant; activ
       if (!next) setMobileChat(false);
     }
   }, [conversations, selectedId]);
-  const agentChanged = useCallback((agent: AgentAccount) => {
+  const agentChanged = useCallback((agent: AgentAccount, conversation?: Conversation) => {
     const participant: Participant = { participant_id: agent.participant_id, kind: 'agent', name: agent.name, created_at: agent.created_at };
     setParticipants((current) => current.some((item) => item.participant_id === participant.participant_id)
       ? current.map((item) => item.participant_id === participant.participant_id ? participant : item) : [...current, participant]);
+    if (conversation) {
+      setConversations((current) => [conversation, ...current.filter((item) => item.conversation_id !== conversation.conversation_id)]);
+      setMembersByConversation((current) => ({ ...current, [conversation.conversation_id]: [participant] }));
+    }
   }, []);
   const upsert = useCallback((conversation: Conversation) => setConversations((current) => {
     const found = current.some((item) => item.conversation_id === conversation.conversation_id);

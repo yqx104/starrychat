@@ -105,7 +105,7 @@ func TestIMTriggerSyncEndToEnd(t *testing.T) {
 		return stop
 	}
 	password := newID(t)
-	authJSON(t, im.URL, "POST", "/auth/register", "", map[string]any{"username": "owner", "password": password, "name": "Owner", "kind": "human"}, 201)
+	authJSON(t, im.URL, "POST", "/auth/register", "", map[string]any{"username": "owner", "password": password, "name": "Owner"}, 201)
 	humanToken := authJSON(t, im.URL, "POST", "/auth/login", "", map[string]any{"username": "owner", "password": password, "transport": "bearer"}, 200)["token"].(string)
 	createAgent := func(username string) string {
 		t.Helper()

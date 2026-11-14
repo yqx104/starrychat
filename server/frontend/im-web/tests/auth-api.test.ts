@@ -14,7 +14,7 @@ describe('cookie authentication and request lifetime', () => {
     await expect(client.me()).resolves.toEqual(person);
     await client.logout();
     expect(fetcher.mock.calls.map(([path]) => path)).toEqual(['/im-api/auth/register', '/im-api/auth/login', '/im-api/auth/me', '/im-api/auth/logout']);
-    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ username: 'name', password: 'secret', name: '用户', kind: 'human' });
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ username: 'name', password: 'secret', name: '用户' });
     expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ username: 'name', password: 'secret', transport: 'cookie' });
     for (const [, request] of fetcher.mock.calls) expect(request.credentials).toBe('same-origin');
     expect(fetcher.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'application/json' });

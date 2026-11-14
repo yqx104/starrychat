@@ -23,7 +23,7 @@ type agentsResponse struct {
 
 func (f *authFixture) anotherHuman(t *testing.T, username string) loginResult {
 	t.Helper()
-	responseValue[map[string]any](t, f.call("POST", "/auth/register", registration(username, "human")), 201)
+	responseValue[map[string]any](t, f.call("POST", "/auth/register", registration(username)), 201)
 	return responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody(username, "bearer")), 200)
 }
 
@@ -50,6 +50,57 @@ func participantIDs(participants []model.Participant) []string {
 
 func TestMySQLAgentOwnership(t *testing.T) {
 	instance := startMySQL(t)
+	t.Run("creates_direct_with_agent", func(t *testing.T) {
+		f := newAuthFixture(t, instance)
+		owner := f.humanLogin(t)
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations"), int64(0))
+		input := map[string]any{"name": "New Agent", "username": "new-agent", "password": testPassword}
+		response := f.call("POST", "/agents", input, authRequest{bearer: owner.Token})
+		created := responseValue[model.CreateAgentResult](t, response, 201)
+		agentID := created.Agent.ParticipantID
+		chats := responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: owner.Token}), 200).Conversations
+		equalValue(t, len(chats), 1)
+		direct := chats[0]
+		if direct.Kind != "direct" || direct.Hidden || direct.Title != nil || direct.DissolvedAt != nil {
+			t.Fatalf("invalid initial direct: %+v", direct)
+		}
+		equalValue(t, created.Conversation, direct)
+		path := "/conversations/" + direct.ConversationID
+		members := responseValue[handler.MembersResponse](t, f.call("GET", path+"/members", nil, authRequest{bearer: owner.Token}), 200).Members
+		equalValue(t, participantIDs(members), []string{owner.Participant.ParticipantID, agentID})
+		agent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("new-agent", "bearer")), 200)
+		equalValue(t, responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: agent.Token}), 200).Conversations, chats)
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox WHERE operation='subscribe' AND conversation_id=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.channel_type'))='im_direct' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.conversation_id'))=? AND JSON_LENGTH(JSON_EXTRACT(payload,'$.agent_ids'))=1 AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.agent_ids[0]'))=?", direct.ConversationID, direct.ConversationID, agentID), int64(1))
+		for range 2 {
+			opened := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations/direct", map[string]any{"agent_id": agentID}, authRequest{bearer: owner.Token}), 200).Conversation
+			equalValue(t, opened, direct)
+		}
+		responseValue[handler.ConversationResponse](t, f.call("PATCH", path+"/visibility", map[string]any{"hidden": true}, authRequest{bearer: owner.Token}), 200)
+		opened := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations/direct", map[string]any{"agent_id": agentID}, authRequest{bearer: owner.Token}), 200).Conversation
+		equalValue(t, opened, direct)
+		assertError(t, f.call("POST", "/agents", input, authRequest{bearer: owner.Token}), 409, "CONFLICT")
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations"), int64(1))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversation_members"), int64(2))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(2))
+	})
+	for _, failure := range []struct{ name, statement string }{
+		{"conversation", "CREATE TRIGGER fail_registration BEFORE INSERT ON conversations FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='conversation unavailable'"},
+		{"agent_member", "CREATE TRIGGER fail_registration BEFORE INSERT ON conversation_members FOR EACH ROW BEGIN IF (SELECT kind FROM participants WHERE participant_id=NEW.participant_id)='agent' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='member unavailable'; END IF; END"},
+		{"subscription", "CREATE TRIGGER fail_registration BEFORE INSERT ON trigger_outbox FOR EACH ROW BEGIN IF NEW.operation='subscribe' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='subscription unavailable'; END IF; END"},
+	} {
+		t.Run("rolls_back_agent/"+failure.name, func(t *testing.T) {
+			f := newAuthFixture(t, instance)
+			owner := f.humanLogin(t)
+			f.exec(t, failure.statement)
+			input := map[string]any{"name": "Rollback", "username": "rollback-agent", "password": testPassword}
+			responseValue[handler.ErrorResponse](t, f.call("POST", "/agents", input, authRequest{bearer: owner.Token}), 500)
+			equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants"), int64(1))
+			equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts"), int64(1))
+			for _, table := range []string{"conversations", "conversation_members", "trigger_outbox"} {
+				equalValue(t, f.count(t, "SELECT COUNT(*) FROM "+table), int64(0))
+			}
+		})
+	}
 	t.Run("multiple_humans_manage_only_owned_agents_and_directory_scope", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
 		one := f.humanLogin(t)
@@ -99,9 +150,11 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		foreign := f.createAgent(t, two, "foreign")
 		agent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("alpha", "bearer")), 200)
 		foreignAgent := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("foreign", "bearer")), 200)
+		foreignConversations := responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: two.Token}), 200).Conversations
+		equalValue(t, len(foreignConversations), 1)
 		assertError(t, f.call("POST", "/conversations/direct", map[string]any{"agent_id": foreign.ParticipantID}, authRequest{bearer: one.Token}), 403, "FORBIDDEN")
 		assertError(t, f.call("POST", "/conversations", map[string]any{"title": "Denied", "agent_ids": []string{a.ParticipantID, foreign.ParticipantID}}, authRequest{bearer: one.Token}), 403, "FORBIDDEN")
-		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations"), int64(0))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations"), int64(3))
 		group := responseValue[handler.ConversationResponse](t, f.call("POST", "/conversations", map[string]any{"title": "Own group", "agent_ids": []string{a.ParticipantID}}, authRequest{bearer: one.Token}), 201).Conversation
 		path := fmt.Sprintf("/conversations/%s", group.ConversationID)
 		for _, token := range []string{one.Token, agent.Token} {
@@ -116,12 +169,12 @@ func TestMySQLAgentOwnership(t *testing.T) {
 			assertError(t, f.call("POST", path+"/messages", map[string]any{"content": "Denied"}, authRequest{bearer: token}), 403, "FORBIDDEN")
 			assertError(t, f.call("PATCH", path, map[string]any{"title": "Denied"}, authRequest{bearer: token}), 403, "FORBIDDEN")
 			assertError(t, f.call("POST", path+"/dissolve", nil, authRequest{bearer: token}), 403, "FORBIDDEN")
-			equalValue(t, responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: token}), 200).Conversations, []model.Conversation{})
+			equalValue(t, responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: token}), 200).Conversations, foreignConversations)
 		}
 		// An inconsistent imported membership still cannot grant cross-owner access.
 		f.exec(t, "INSERT INTO conversation_members (conversation_id,participant_id,created_at) VALUES (?,?,?)", group.ConversationID, foreign.ParticipantID, int64(1))
 		assertError(t, f.call("GET", path, nil, authRequest{bearer: foreignAgent.Token}), 403, "FORBIDDEN")
-		equalValue(t, responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: foreignAgent.Token}), 200).Conversations, []model.Conversation{})
+		equalValue(t, responseValue[handler.ConversationsResponse](t, f.call("GET", "/conversations", nil, authRequest{bearer: foreignAgent.Token}), 200).Conversations, foreignConversations)
 		assertError(t, f.call("GET", path+"/members", nil, authRequest{bearer: one.Token}), 403, "FORBIDDEN")
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM messages"), int64(0))
 	})
@@ -175,7 +228,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		equalValue(t, persisted.Name, "Renamed")
 		responseValue[loginResult](t, f.call("POST", "/auth/login", body), 200)
 	})
-	t.Run("forged_ownership_invalid_patches_and_legacy_registration_cannot_bypass", func(t *testing.T) {
+	t.Run("forged_ownership_and_invalid_patches_are_rejected", func(t *testing.T) {
 		f := newAuthFixture(t, instance)
 		owner := f.humanLogin(t)
 		for _, extra := range []map[string]any{{"kind": "human"}, {"owner_participant_id": 999}, {"participant_id": testID(999)}, {"password_hash": "hash"}} {
@@ -185,13 +238,7 @@ func TestMySQLAgentOwnership(t *testing.T) {
 			}
 			assertError(t, f.call("POST", "/agents", body, authRequest{bearer: owner.Token}), 400, "INVALID_REQUEST")
 		}
-		legacy := registration("legacy", "agent")
-		legacy["owner_participant_id"] = 999
-		assertError(t, f.call("POST", "/auth/register", legacy, authRequest{bearer: owner.Token}), 400, "INVALID_REQUEST")
-		delete(legacy, "owner_participant_id")
-		created := responseValue[struct {
-			Participant model.Participant `json:"participant"`
-		}](t, f.call("POST", "/auth/register", legacy, authRequest{bearer: owner.Token}), 201).Participant
+		created := f.createAgent(t, owner, "alpha")
 		account, err := f.store.GetAccount(t.Context(), created.ParticipantID)
 		if err != nil {
 			t.Fatal(err)
@@ -266,6 +313,9 @@ func TestMySQLAgentOwnership(t *testing.T) {
 		equalValue(t, success, 1)
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participants"), int64(3))
 		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts"), int64(3))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversations"), int64(1))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM conversation_members"), int64(2))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(2))
 		a := f.createAgent(t, one, "partial-agent")
 		name := "Concurrent name"
 		username := "concurrent-name"

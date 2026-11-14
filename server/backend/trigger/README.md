@@ -86,7 +86,7 @@ Agent 表先只登记身份。显示名、所属真人、登录账号和密码�
 
 ## IM 接口对接
 
-IM 是创建 Agent 的入口。创建 Agent 时在本地事务里写入账号和 `register_agent` 待同步事件，提交后由后台调用 `PUT /agents/{agent_id}` 登记；Trigger 不可用时保留事件重试，IM 账号创建仍可成功。创建单聊、创建群聊或往群里添加 Agent 时创建订阅；移除 Agent 和解散群聊时调用对应删除接口；发送消息时调用 `POST /messages`。这些操作都通过 IM 的 `triggerclient` 接入。
+IM 的 `POST /agents` 是创建 Agent 账号的唯一入口。创建时在本地事务里写入账号、与 owner 的单聊，以及 `register_agent` 和单聊订阅待同步事件，提交后由后台调用 `PUT /agents/{agent_id}` 登记并同步订阅；Trigger 不可用时保留事件重试，IM 账号创建仍可成功。创建群聊或往群里添加 Agent 时也创建订阅；移除 Agent 和解散群聊时调用对应删除接口；发送消息时调用 `POST /messages`。这些操作都通过 IM 的 `triggerclient` 接入。
 
 会话变更与消息先在 IM 事务中写入持久化待同步队列，提交后按会话顺序调用 Trigger；失败自动重试，IM 重启后继续。会话创建时记录订阅，成员变更时记录增量事件；订阅同步前幂等登记 Agent。客户端 WS 握手仍会幂等登记 Agent。IM 的业务 HTTP 成功、Trigger 接收入队和 Adaptor 落盘 ACK 是不同阶段；Pi 执行入口尚未实现。
 

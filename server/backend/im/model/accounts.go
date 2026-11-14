@@ -25,6 +25,11 @@ type CreateAgentInput struct {
 	Password string `json:"-"`
 }
 
+type CreateAgentResult struct {
+	Agent        AgentAccount `json:"agent"`
+	Conversation Conversation `json:"conversation"`
+}
+
 type UpdateAgentInput struct {
 	ParticipantID string
 	Name          *string
@@ -36,5 +41,4 @@ type RegisterInput struct {
 	Username string
 	Password string `json:"-"`
 	Name     string
-	Kind     ParticipantKind
 }

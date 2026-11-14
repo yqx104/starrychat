@@ -81,14 +81,14 @@ go run ./server/backend/im/cmd -config localdeploy/im/config.json
 
 | 接口 | 请求 | 成功响应 |
 | --- | --- | --- |
-| `POST /auth/register` | `username,password,name,kind` | `201 {participant}` |
+| `POST /auth/register` | `username,password,name`，仅注册真人 | `201 {participant}` |
 | `POST /auth/login` | `username,password,transport`，transport 为 `cookie` 或 `bearer` | `200 {participant,expires_at}`；仅 bearer 模式额外返回 `token` |
 | `GET /auth/me` | 已认证 | `200 {participant}`，正常续期 |
 | `POST /auth/logout` | 无业务请求体或 `{}` | `204`，清 Cookie，不续期 |
 
 用户名区分大小写，3–64 个 ASCII 字母、数字、点、下划线或连字符，首位必须是字母或数字；密码为 8–72 字节；显示名为 1–100 个字符、不能全为空白。JSON 请求体统一最多 1 MiB。本机部署不设置登录、注册的频率和并发限制。
 
-不同用户名可以分别注册 human，真人账号的 owner_participant_id 为 NULL。创建 Agent 账号要求当前身份是真人，owner_participant_id 从认证身份取得，不接受客户端指定。参与者和账号在同一事务中创建，失败不会留下半条注册记录。注册不会登录新身份；真人创建 Agent 时只续期真人自己的令牌。
+`POST /auth/register` 固定注册 human，不接受 `kind` 字段；不同用户名可以分别注册真人，真人账号的 owner_participant_id 为 NULL。创建 Agent 统一使用 `POST /agents`，要求当前身份是真人，owner_participant_id 从认证身份取得，不接受客户端指定。参与者和账号在同一事务中创建，失败不会留下半条注册记录。真人注册不会登录新身份或续期旧令牌；创建 Agent 时只续期当前真人自己的令牌。
 
 Cookie 为 `im_token`，`HttpOnly; SameSite=Strict; Path=/`，HTTPS 下启用 Secure；仅明确开启的本机 HTTP 开发允许非 Secure。Cookie 的变更请求须同源；后端比较实际 Origin、Host 和 TLS 状态，不以 X-Forwarded-* 建立信任。网页无需读取 JWT。Bearer 客户端发送 `Authorization: Bearer ...`，并从响应的 `X-IM-Token`、`X-IM-Token-Expires-At` 保存新令牌。时间戳为 Unix 毫秒。
 
@@ -109,16 +109,16 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 | 接口 | 请求 | 响应 |
 | --- | --- | --- |
 | `GET /agents` | 已登录真人 | `200 {agents: AgentAccount[]}`，仅自己的 Agent |
-| `POST /agents` | `{name,username,password}` | `201 {agent: AgentAccount}` |
+| `POST /agents` | `{name,username,password}` | `201 {agent: AgentAccount, conversation: Conversation}`，包含自动创建的单聊 |
 | `PATCH /agents/:participant_id` | 非空 `{name?,username?,password?}` | `200 {agent: AgentAccount}`，仅 owner 可修改 |
 
 `AgentAccount` 只有 `participant_id,kind,name,username,owner_participant_id,created_at`，不含密码。创建、更新不切换当前身份，沿用七天续期；重设密码不会即时撤销已签发 JWT。用户名仍全局唯一，更新显示名和凭据在同一事务中完成。
 
-`POST /agents` 和 `POST /auth/register` 的 Agent 分支都会在本地账号事务中写入 `register_agent` 事件，与参与者、账号一起提交或回滚。事件载荷只有 `agent_id`，不保存账号密码或 Token。提交后返回 `201`，Trigger 暂时不可用不影响账号创建和 IM 登录；后台调用 `PUT /agents/{participant_id}` 登记，失败自动重试。真人注册和 Agent 更新不产生登记事件。
+`POST /agents` 是唯一的 Agent 账号创建入口，同时自动创建 owner 与新 Agent 的单聊，双方默认可见。在同一事务中写入参与者、账号、会话、双方成员，以及 `register_agent` 登记事件和单聊 `subscribe` 事件；任何一步失败都整体回滚。登记事件载荷只有 `agent_id`，不保存账号密码或 Token。提交后返回 `201`，Trigger 暂时不可用不影响账号创建和 IM 登录；后台调用 `PUT /agents/{participant_id}` 登记并同步单聊订阅，失败自动重试。真人注册和 Agent 更新不会创建单聊或产生这些事件。
 
-创建成功表示 IM 账号和登记任务已持久化，Trigger 的登记可能稍后完成。后台只发送已提交的事件；响应丢失或进程退出会使用同一 Agent ID 重试，Trigger 登记接口幂等。订阅同步前和客户端 WS 握手时仍会幂等登记 Agent，保证后续操作的前置条件。
+创建成功表示 IM 账号、单聊及登记和订阅任务已持久化，Trigger 的同步可能稍后完成。后台只发送已提交的事件；响应丢失或进程退出会使用同一 Agent ID 重试，Trigger 登记接口幂等。订阅同步前和客户端 WS 握手时仍会幂等登记 Agent，保证后续操作的前置条件。
 
-`GET /participants` 的响应格式不变。真人只能看到自己和自己的 Agent；Agent 只能看到所属真人及同主 Agent。创建单聊、拉群、加人、移除和 @ 也校验相同 owner。会话列表及历史仍要求成员身份，不提供跨真人共享群。已有 `/auth/register` 的 agent 分支执行同样的 owner 校验。
+`GET /participants` 的响应格式不变。真人只能看到自己和自己的 Agent；Agent 只能看到所属真人及同主 Agent。创建单聊、拉群、加人、移除和 @ 也校验相同 owner。会话列表及历史仍要求成员身份，不提供跨真人共享群。
 
 ## 会话列表与个人显示状态
 
@@ -128,7 +128,7 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 
 `PATCH /conversations/{conversation_id}/visibility` 接受 `{"hidden": true}` 或 `{"hidden": false}`，返回 `200 {conversation}`。必须提供布尔值，只更新认证调用者自己的成员记录，不接受指定其他成员。重复设置同一值可以安全重试；已解散群也可以隐藏和恢复，以查看历史。
 
-`POST /conversations/direct` 会找到并恢复已有单聊，保留原会话 ID 和历史消息；首次打开时创建默认可见的单聊。隐藏、恢复和重新打开已有单聊不改变成员关系，不删除消息，也不产生 Trigger 待同步事件。新消息不会自动恢复隐藏状态；当前通过通讯录点击 Agent 或通过群聊列表点击群恢复显示。
+`POST /conversations/direct` 会找到并恢复已有单聊，保留原会话 ID 和历史消息。新 Agent 的单聊在创建账号时已建立；历史 Agent 若尚无单聊，首次打开时仍会创建默认可见的单聊。隐藏、恢复和重新打开已有单聊不改变成员关系，不删除消息，也不产生 Trigger 待同步事件。新消息不会自动恢复隐藏状态；当前通过通讯录点击 Agent 或通过群聊列表点击群恢复显示。
 
 ## Trigger 同步
 
@@ -136,7 +136,7 @@ python3 -c 'import getpass,json,sys; print("Human participant ID: ",end="",file=
 
 | IM 操作 | 提交后调用的 Trigger 接口 |
 | --- | --- |
-| 创建 Agent | `PUT /agents/{agent_id}`，仅发送身份 ID |
+| 创建 Agent（同时创建单聊） | `PUT /agents/{agent_id}` 登记身份，`POST /channels/subscriptions` 订阅自动创建的单聊 |
 | 创建单聊、创建群聊、添加 Agent 成员 | `POST /channels/subscriptions`，仅订阅 Agent，空群不调用 |
 | 移除 Agent 成员 | `DELETE /channels/{channel_type}/{conversation_id}/agents/{agent_id}` |
 | 解散群聊，包括重复解散 | `DELETE /channels/{channel_type}/{conversation_id}` |

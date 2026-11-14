@@ -163,7 +163,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	imConfig := writeConfig("im.json", map[string]any{"mysql_dsn": fmt.Sprintf("root@unix(%s)/adaptor_im?charset=utf8mb4", instance.socket), "address": "127.0.0.1:0", "insecure_local_http": true, "trigger_base_url": "http://" + triggerListener.Addr().String()})
 	imURL, stopIM := startChild(t, exec.Command(imBinary, "-config", imConfig), "IM 已就绪：")
 	password := newID(t)
-	authJSON(t, imURL, "POST", "/auth/register", "", map[string]any{"username": "human", "password": password, "name": "Human", "kind": "human"}, 201)
+	authJSON(t, imURL, "POST", "/auth/register", "", map[string]any{"username": "human", "password": password, "name": "Human"}, 201)
 	humanToken := authJSON(t, imURL, "POST", "/auth/login", "", map[string]any{"username": "human", "password": password, "transport": "bearer"}, 200)["token"].(string)
 	dsn := fmt.Sprintf("root@unix(%s)/adaptor_trigger?charset=utf8mb4", instance.socket)
 	startTrigger := func(address string) (*repository.Repository, *connections.Server, *httptest.Server) {

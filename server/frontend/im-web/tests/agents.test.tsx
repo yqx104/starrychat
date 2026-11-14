@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { api, ApiError } from '../src/api/client';
-import type { AgentAccount, Conversation, Participant } from '../src/api/types';
+import type { AgentAccount, Conversation, CreateAgentResult, Participant } from '../src/api/types';
 import { App } from '../src/app/App';
 
 const human: Participant = { participant_id: testID(1), kind: 'human', name: '用户', created_at: 1 };
@@ -12,6 +12,7 @@ const newcomer: AgentAccount = { participant_id: testID(3), kind: 'agent', name:
 const participant = (value: AgentAccount): Participant => ({ participant_id: value.participant_id, kind: 'agent', name: value.name, created_at: value.created_at });
 const group: Conversation = { conversation_id: testID(11), kind: 'group', title: '项目组', created_at: 11, dissolved_at: null, hidden: false };
 const direct: Conversation = { conversation_id: testID(12), kind: 'direct', title: null, created_at: 10, dissolved_at: null, hidden: false };
+const newcomerDirect: Conversation = { ...direct, conversation_id: testID(13), created_at: 20 };
 function basic() {
   vi.spyOn(api, 'me').mockResolvedValue(human);
   vi.spyOn(api, 'participants').mockResolvedValue([human, participant(agent)]);
@@ -27,10 +28,14 @@ async function openManager(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('Agent management', () => {
-  it('creates an owned Agent and updates contacts and group candidates', async () => {
+  it('creates an owned Agent and immediately lists its direct chat without opening it or losing the current draft', async () => {
     basic(); vi.spyOn(api, 'agents').mockResolvedValue([agent]);
-    const create = vi.spyOn(api, 'createAgent').mockResolvedValue(newcomer);
+    const create = vi.spyOn(api, 'createAgent').mockResolvedValue({ agent: newcomer, conversation: newcomerDirect });
+    const openDirect = vi.spyOn(api, 'openDirect');
     const user = userEvent.setup(); render(<App />);
+    await screen.findByText('原有消息');
+    const composer = screen.getByRole('textbox', { name: '消息内容' }) as HTMLInputElement;
+    await user.type(composer, '保留当前草稿');
     const manager = await openManager(user);
     await within(manager).findByText('mia.test');
     await user.click(within(manager).getByRole('button', { name: '创建 Agent' }));
@@ -47,6 +52,11 @@ describe('Agent management', () => {
     await user.click(screen.getByRole('button', { name: '关闭' }));
     expect(screen.getByRole('button', { name: /Nova.*点击发起对话/ })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '消息' }));
+    expect(screen.getByRole('button', { name: /Nova.*单聊/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /项目组.*群聊/ }).getAttribute('aria-current')).toBe('true');
+    expect(composer.value).toBe('保留当前草稿');
+    expect(openDirect).not.toHaveBeenCalled();
+    expect(api.conversations).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: '创建群聊' }));
     expect(within(screen.getByRole('dialog', { name: '创建群聊' })).getByRole('checkbox', { name: 'Nova' })).toBeTruthy();
   });
@@ -158,7 +168,7 @@ describe('Agent management', () => {
   it('does not apply a pending creation after the signed-in identity changes', async () => {
     basic();
     const nextHuman: Participant = { participant_id: testID(10), kind: 'human', name: '另一用户', created_at: 1 };
-    let notify!: () => void; let finishCreate!: (value: AgentAccount) => void;
+    let notify!: () => void; let finishCreate!: (value: CreateAgentResult) => void;
     vi.spyOn(api, 'onUnauthorized').mockImplementation((listener) => { notify = listener; return () => {}; });
     vi.spyOn(api, 'agents').mockResolvedValue([agent]);
     vi.spyOn(api, 'createAgent').mockImplementation(() => new Promise((resolve) => { finishCreate = resolve; }));
@@ -176,9 +186,12 @@ describe('Agent management', () => {
     await user.type(await screen.findByLabelText('账号'), 'otheruser'); await user.type(screen.getByLabelText('密码'), 'fixture-pass');
     await user.click(screen.getByRole('button', { name: '登录' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '创建 Agent' })).toBeNull());
-    await act(async () => finishCreate(newcomer));
+    await act(async () => finishCreate({ agent: newcomer, conversation: newcomerDirect }));
     await user.click(await screen.findByRole('button', { name: '通讯录' }));
     expect(screen.queryByRole('button', { name: /Nova.*点击发起对话/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: '消息' }));
+    expect(screen.queryByRole('button', { name: /Nova.*单聊/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: new RegExp(testID(13)) })).toBeNull();
   });
   it('does not show the management entry for an Agent identity', async () => {
     basic(); vi.mocked(api.me).mockResolvedValue(participant(agent));

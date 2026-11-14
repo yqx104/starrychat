@@ -39,12 +39,16 @@ func (s *Service) ListAgents(ctx context.Context, caller model.RequestContext) (
 	})
 }
 
-func (s *Service) CreateAgent(ctx context.Context, caller model.RequestContext, input model.CreateAgentInput) (model.AgentAccount, error) {
-	participant, err := s.Register(ctx, caller, model.RegisterInput{Username: input.Username, Password: input.Password, Name: input.Name, Kind: model.Agent})
+func (s *Service) CreateAgent(ctx context.Context, caller model.RequestContext, input model.CreateAgentInput) (model.CreateAgentResult, error) {
+	result, err := s.register(ctx, caller, model.RegisterInput{Username: input.Username, Password: input.Password, Name: input.Name}, model.Agent)
 	if err != nil {
-		return model.AgentAccount{}, err
+		return model.CreateAgentResult{}, err
 	}
-	return model.AgentAccount{ParticipantID: participant.ParticipantID, Kind: model.Agent, Name: participant.Name, Username: input.Username, OwnerParticipantID: caller.ParticipantID, CreatedAt: participant.CreatedAt}, nil
+	participant := result.participant
+	return model.CreateAgentResult{
+		Agent:        model.AgentAccount{ParticipantID: participant.ParticipantID, Kind: model.Agent, Name: participant.Name, Username: input.Username, OwnerParticipantID: caller.ParticipantID, CreatedAt: participant.CreatedAt},
+		Conversation: result.conversation,
+	}, nil
 }
 
 func (s *Service) UpdateAgent(ctx context.Context, caller model.RequestContext, input model.UpdateAgentInput) (model.AgentAccount, error) {

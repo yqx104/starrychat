@@ -81,62 +81,62 @@ func drainTrigger(t *testing.T, s *service.Service) {
 
 func TestTriggerOutbox(t *testing.T) {
 	instance := startMySQL(t)
-	for _, route := range []struct{ path, field string }{{"/agents", "agent"}, {"/auth/register", "participant"}} {
-		t.Run("agent_registration"+route.path, func(t *testing.T) {
-			f := newAuthFixture(t, instance)
-			owner := f.humanLogin(t)
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(0))
-			client := &recordingTrigger{}
-			s := service.New(f.store, client)
-			f.api = handler.NewAPI(s, s, f.tokens, handler.APIOptions{InsecureLocalHTTP: true})
-			input := map[string]any{"username": "queued-agent", "password": testPassword, "name": "Queued Agent"}
-			if route.path == "/auth/register" {
-				input["kind"] = "agent"
+	t.Run("agent_registration", func(t *testing.T) {
+		f := newAuthFixture(t, instance)
+		owner := f.humanLogin(t)
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(0))
+		client := &recordingTrigger{}
+		s := service.New(f.store, client)
+		f.api = handler.NewAPI(s, s, f.tokens, handler.APIOptions{InsecureLocalHTTP: true})
+		input := map[string]any{"username": "queued-agent", "password": testPassword, "name": "Queued Agent"}
+		created := responseValue[model.CreateAgentResult](t, f.call("POST", "/agents", input, authRequest{bearer: owner.Token}), 201)
+		id := created.Agent.ParticipantID
+		equalValue(t, len(client.snapshot()), 0)
+		loggedIn := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("queued-agent", "bearer")), 200)
+		equalValue(t, loggedIn.Participant.ParticipantID, id)
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox WHERE operation='register_agent' AND conversation_id IS NULL AND JSON_LENGTH(payload)=1 AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.agent_id'))=?", id), int64(1))
+		responseValue[handler.ErrorResponse](t, f.call("POST", "/agents", input, authRequest{bearer: owner.Token}), 409)
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(2))
+		client.hook = func(_ context.Context, call triggerCall) error {
+			if call.agentID == id {
+				return errors.New("Trigger unavailable")
 			}
-			created := responseValue[map[string]any](t, f.call("POST", route.path, input, authRequest{bearer: owner.Token}), 201)
-			id := created[route.field].(map[string]any)["participant_id"].(string)
-			equalValue(t, len(client.snapshot()), 0)
-			loggedIn := responseValue[loginResult](t, f.call("POST", "/auth/login", loginBody("queued-agent", "bearer")), 200)
-			equalValue(t, loggedIn.Participant.ParticipantID, id)
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox WHERE operation='register_agent' AND conversation_id IS NULL AND JSON_LENGTH(payload)=1 AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.agent_id'))=?", id), int64(1))
-			responseValue[handler.ErrorResponse](t, f.call("POST", route.path, input, authRequest{bearer: owner.Token}), 409)
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(1))
-			client.hook = func(_ context.Context, call triggerCall) error {
-				if call.agentID == id {
-					return errors.New("Trigger unavailable")
-				}
-				return nil
-			}
-			if processed, err := s.ProcessTriggerEvent(t.Context()); !processed || err == nil {
-				t.Fatalf("registration failure was not retained: %v %v", processed, err)
-			}
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox WHERE attempts=1 AND next_attempt_at>?", time.Now().UnixMilli()), int64(1))
-			f.exec(t, "UPDATE trigger_outbox SET next_attempt_at=?", time.Now().Add(time.Hour).UnixMilli())
-			other, err := s.Register(t.Context(), model.RequestContext{ParticipantID: owner.Participant.ParticipantID}, model.RegisterInput{Kind: model.Agent, Name: "Other", Username: "other-agent", Password: testPassword})
-			if err != nil {
-				t.Fatal(err)
-			}
-			drainTrigger(t, s)
-			equalValue(t, len(client.snapshot()), 2)
-			equalValue(t, client.snapshot()[1].agentID, other.ParticipantID)
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(1))
-			if err := f.store.Close(); err != nil {
-				t.Fatal(err)
-			}
-			reopened, err := repository.Open(t.Context(), f.dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
-			client.hook = nil
-			f.exec(t, "UPDATE trigger_outbox SET next_attempt_at=0")
-			drainTrigger(t, service.New(reopened, client))
-			equalValue(t, len(client.snapshot()), 3)
-			equalValue(t, client.snapshot()[2].agentID, id)
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(0))
-			equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts WHERE participant_id=?", id), int64(1))
-		})
-	}
+			return nil
+		}
+		if processed, err := s.ProcessTriggerEvent(t.Context()); !processed || err == nil {
+			t.Fatalf("registration failure was not retained: %v %v", processed, err)
+		}
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox WHERE attempts=1 AND next_attempt_at>?", time.Now().UnixMilli()), int64(1))
+		f.exec(t, "UPDATE trigger_outbox SET next_attempt_at=?", time.Now().Add(time.Hour).UnixMilli())
+		other, err := s.CreateAgent(t.Context(), model.RequestContext{ParticipantID: owner.Participant.ParticipantID}, model.CreateAgentInput{Name: "Other", Username: "other-agent", Password: testPassword})
+		if err != nil {
+			t.Fatal(err)
+		}
+		drainTrigger(t, s)
+		equalValue(t, len(client.snapshot()), 4)
+		equalValue(t, client.snapshot()[1].agentID, other.Agent.ParticipantID)
+		equalValue(t, client.snapshot()[3].operation, "subscribe")
+		equalValue(t, client.snapshot()[3].subscription.AgentIDs, []string{other.Agent.ParticipantID})
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(2))
+		if err := f.store.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := repository.Open(t.Context(), f.dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopened.Close()
+		client.hook = nil
+		f.exec(t, "UPDATE trigger_outbox SET next_attempt_at=0")
+		drainTrigger(t, service.New(reopened, client))
+		equalValue(t, len(client.snapshot()), 7)
+		equalValue(t, client.snapshot()[4].agentID, id)
+		equalValue(t, client.snapshot()[6].operation, "subscribe")
+		equalValue(t, client.snapshot()[6].subscription.AgentIDs, []string{id})
+		equalValue(t, client.snapshot()[6].source.ChannelType, "im_direct")
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM trigger_outbox"), int64(0))
+		equalValue(t, f.count(t, "SELECT COUNT(*) FROM participant_accounts WHERE participant_id=?", id), int64(1))
+	})
 	t.Run("all_business_events_and_payloads", func(t *testing.T) {
 		f := newIMFixture(t, instance)
 		client := &recordingTrigger{}
@@ -206,8 +206,8 @@ func TestTriggerOutbox(t *testing.T) {
 		accounts := f.count(t, "SELECT COUNT(*) FROM participant_accounts")
 		f.exec(t, "RENAME TABLE trigger_outbox TO unavailable_outbox")
 		for name, call := range map[string]func() error{
-			"register": func() error {
-				_, err := s.Register(t.Context(), caller, model.RegisterInput{Kind: model.Agent, Name: "Rollback", Username: "rollback-agent", Password: testPassword})
+			"create_agent": func() error {
+				_, err := s.CreateAgent(t.Context(), caller, model.CreateAgentInput{Name: "Rollback", Username: "rollback-agent", Password: testPassword})
 				return err
 			},
 			"group": func() error {

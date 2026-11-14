@@ -1,5 +1,5 @@
 import { apiBaseUrl } from './config';
-import type { AgentAccount, Conversation, CreateAgentInput, Message, MessagePage, MessageQuery, Participant, SendMessageInput, UpdateAgentInput } from './types';
+import type { AgentAccount, Conversation, CreateAgentInput, CreateAgentResult, Message, MessagePage, MessageQuery, Participant, SendMessageInput, UpdateAgentInput } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public code: string, public status?: number) {
@@ -143,7 +143,7 @@ export class ImApi {
   }
 
   async register(username: string, password: string, name: string): Promise<Participant> {
-    const result = object(await this.request('/auth/register', { method: 'POST', body: { username, password, name, kind: 'human' } }));
+    const result = object(await this.request('/auth/register', { method: 'POST', body: { username, password, name } }));
     return participant(result.participant);
   }
   async login(username: string, password: string): Promise<{ participant: Participant; expires_at: number }> {
@@ -158,9 +158,12 @@ export class ImApi {
   async agents(signal?: AbortSignal): Promise<AgentAccount[]> {
     return array(object(await this.request('/agents', { signal })).agents, agentAccount);
   }
-  async createAgent(input: CreateAgentInput): Promise<AgentAccount> {
+  async createAgent(input: CreateAgentInput): Promise<CreateAgentResult> {
     const { name, username, password } = input;
-    return agentAccount(object(await this.request('/agents', { method: 'POST', body: { name, username, password } })).agent);
+    const result = object(await this.request('/agents', { method: 'POST', body: { name, username, password } }));
+    const direct = conversation(result.conversation);
+    if (direct.kind !== 'direct' || direct.hidden || direct.dissolved_at !== null) return invalid();
+    return { agent: agentAccount(result.agent), conversation: direct };
   }
   async updateAgent(participantId: string, input: UpdateAgentInput): Promise<AgentAccount> {
     validId(participantId);

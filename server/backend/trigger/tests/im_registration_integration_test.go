@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -63,7 +62,7 @@ func TestIMRegistersAgentsWithTrigger(t *testing.T) {
 	}
 	imURL, _ := startChild(t, exec.Command(binary, "-config", configPath), "IM 已就绪：")
 	password := newID(t)
-	human := authJSON(t, imURL, "POST", "/auth/register", "", map[string]any{"username": "owner", "password": password, "name": "Owner", "kind": "human"}, 201)["participant"].(map[string]any)
+	human := authJSON(t, imURL, "POST", "/auth/register", "", map[string]any{"username": "owner", "password": password, "name": "Owner"}, 201)["participant"].(map[string]any)
 	if _, err := store.GetAgent(t.Context(), human["participant_id"].(string)); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("human was registered with Trigger: %v", err)
 	}
@@ -74,45 +73,37 @@ func TestIMRegistersAgentsWithTrigger(t *testing.T) {
 			t.Fatalf("count in %s: got %q, want %q, error %v", database, got, want, err)
 		}
 	}
-	count := 0
-	for _, route := range []struct{ path, field, username string }{
-		{"/agents", "agent", "managed-agent"},
-		{"/auth/register", "participant", "legacy-agent"},
-	} {
-		t.Run(route.path, func(t *testing.T) {
-			input := map[string]any{"username": route.username, "password": password, "name": "Agent"}
-			if route.path == "/auth/register" {
-				input["kind"] = "agent"
-			}
-			// Creation commits locally while Trigger is unavailable; the worker retries.
-			unavailable.Store(true)
-			created := authJSON(t, imURL, "POST", route.path, token, input, 201)[route.field].(map[string]any)
-			id := created["participant_id"].(string)
-			queryCount(t, "SELECT COUNT(*) FROM participant_accounts WHERE username='"+route.username+"'", "registration_im", "1")
-			queryCount(t, "SELECT COUNT(*) FROM participants WHERE kind='agent'", "registration_im", strconv.Itoa(count+1))
-			eventually(t, "registration retained for retry", func() bool {
-				pending, err := instance.query("SELECT COUNT(*) FROM trigger_outbox WHERE operation='register_agent' AND attempts>0", "registration_im")
-				return err == nil && pending == "1"
-			})
-			unavailable.Store(false)
-			eventually(t, "Agent registered without a WS connection", func() bool {
-				_, err := store.GetAgent(t.Context(), id)
-				pending, queryErr := instance.query("SELECT COUNT(*) FROM trigger_outbox", "registration_im")
-				return err == nil && queryErr == nil && pending == "0"
-			})
-			registered, err := store.GetAgent(t.Context(), id)
-			if err != nil || registered.AgentID != id {
-				t.Fatalf("new IM Agent missing from Trigger before any WS connection: %v", err)
-			}
-			// The registration endpoint remains safe for duplicate calls and WS registration.
-			repeated := requestJSON[handler.AgentResponse](t, trigger.URL, "PUT", "/agents/"+id, nil, 200)
-			if repeated.Agent != registered {
-				t.Fatal("duplicate registration changed the Trigger Agent")
-			}
-			authJSON(t, imURL, "POST", route.path, token, input, 409)
-			count++
-			queryCount(t, "SELECT COUNT(*) FROM agents", "registration_trigger", strconv.Itoa(count))
-			queryCount(t, "SELECT COUNT(*) FROM participants WHERE kind='agent'", "registration_im", strconv.Itoa(count))
+	t.Run("/agents", func(t *testing.T) {
+		input := map[string]any{"username": "managed-agent", "password": password, "name": "Agent"}
+		// Creation commits locally while Trigger is unavailable; the worker retries.
+		unavailable.Store(true)
+		created := authJSON(t, imURL, "POST", "/agents", token, input, 201)["agent"].(map[string]any)
+		id := created["participant_id"].(string)
+		queryCount(t, "SELECT COUNT(*) FROM participant_accounts WHERE username='managed-agent'", "registration_im", "1")
+		queryCount(t, "SELECT COUNT(*) FROM participants WHERE kind='agent'", "registration_im", "1")
+		eventually(t, "registration retained for retry", func() bool {
+			pending, err := instance.query("SELECT COUNT(*) FROM trigger_outbox WHERE operation='register_agent' AND attempts>0", "registration_im")
+			return err == nil && pending == "1"
 		})
-	}
+		unavailable.Store(false)
+		eventually(t, "Agent registered without a WS connection", func() bool {
+			_, err := store.GetAgent(t.Context(), id)
+			pending, queryErr := instance.query("SELECT COUNT(*) FROM trigger_outbox", "registration_im")
+			return err == nil && queryErr == nil && pending == "0"
+		})
+		registered, err := store.GetAgent(t.Context(), id)
+		if err != nil || registered.AgentID != id {
+			t.Fatalf("new IM Agent missing from Trigger before any WS connection: %v", err)
+		}
+		queryCount(t, "SELECT COUNT(*) FROM conversations WHERE kind='direct'", "registration_im", "1")
+		queryCount(t, "SELECT COUNT(*) FROM channels WHERE channel_type='im_direct' AND agent_id='"+id+"'", "registration_trigger", "1")
+		// The registration endpoint remains safe for duplicate calls and WS registration.
+		repeated := requestJSON[handler.AgentResponse](t, trigger.URL, "PUT", "/agents/"+id, nil, 200)
+		if repeated.Agent != registered {
+			t.Fatal("duplicate registration changed the Trigger Agent")
+		}
+		authJSON(t, imURL, "POST", "/agents", token, input, 409)
+		queryCount(t, "SELECT COUNT(*) FROM agents", "registration_trigger", "1")
+		queryCount(t, "SELECT COUNT(*) FROM participants WHERE kind='agent'", "registration_im", "1")
+	})
 }

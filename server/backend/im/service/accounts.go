@@ -24,40 +24,55 @@ func accountError(err error) error {
 	return err
 }
 
-func (s *Service) Register(ctx context.Context, caller model.RequestContext, input model.RegisterInput) (model.Participant, error) {
+func (s *Service) Register(ctx context.Context, input model.RegisterInput) (model.Participant, error) {
+	result, err := s.register(ctx, model.RequestContext{}, input, model.Human)
+	return result.participant, err
+}
+
+type registrationResult struct {
+	participant  model.Participant
+	conversation model.Conversation
+}
+
+func (s *Service) register(ctx context.Context, caller model.RequestContext, input model.RegisterInput, kind model.ParticipantKind) (registrationResult, error) {
 	if err := auth.ValidateCredentials(input.Username, input.Password); err != nil {
-		return model.Participant{}, businessError("INVALID_REQUEST", err.Error())
+		return registrationResult{}, businessError("INVALID_REQUEST", err.Error())
 	}
-	if !validName(input.Name) || (input.Kind != model.Human && input.Kind != model.Agent) {
-		return model.Participant{}, businessError("INVALID_REQUEST", "Name must be 1–100 characters and kind must be human or agent.")
+	if !validName(input.Name) {
+		return registrationResult{}, businessError("INVALID_REQUEST", "Name must be 1–100 characters and cannot be blank.")
 	}
-	participant, err := write(ctx, s, func(q *repository.Queries) (model.Participant, error) {
+	result, err := write(ctx, s, func(q *repository.Queries) (registrationResult, error) {
 		var ownerID *string
-		if input.Kind == model.Agent {
+		if kind == model.Agent {
 			if _, err := requireHuman(ctx, q, caller, true); err != nil {
-				return model.Participant{}, err
+				return registrationResult{}, err
 			}
 			owner := caller.ParticipantID
 			ownerID = &owner
 		}
 		now := time.Now().UnixMilli()
-		participant, err := q.InsertParticipant(ctx, input.Kind, input.Name, now)
+		participant, err := q.InsertParticipant(ctx, kind, input.Name, now)
 		if err != nil {
-			return model.Participant{}, err
+			return registrationResult{}, err
 		}
-		err = q.InsertAccount(ctx, model.ParticipantAccount{ParticipantID: participant.ParticipantID, Kind: input.Kind, OwnerParticipantID: ownerID, Username: input.Username, Password: input.Password, CreatedAt: now})
+		err = q.InsertAccount(ctx, model.ParticipantAccount{ParticipantID: participant.ParticipantID, Kind: kind, OwnerParticipantID: ownerID, Username: input.Username, Password: input.Password, CreatedAt: now})
 		if err != nil {
-			return model.Participant{}, err
+			return registrationResult{}, err
 		}
-		if input.Kind == model.Agent {
+		result := registrationResult{participant: participant}
+		if kind == model.Agent {
 			event := model.TriggerAgentRegistration{AgentID: participant.ParticipantID}
 			if err := q.EnqueueTrigger(ctx, nil, model.TriggerRegisterAgent, event); err != nil {
-				return model.Participant{}, err
+				return registrationResult{}, err
+			}
+			result.conversation, err = createDirect(ctx, q, caller.ParticipantID, participant.ParticipantID, now)
+			if err != nil {
+				return registrationResult{}, err
 			}
 		}
-		return participant, nil
+		return result, nil
 	})
-	return participant, accountError(err)
+	return result, accountError(err)
 }
 
 func (s *Service) Login(ctx context.Context, username, password string) (model.Participant, error) {

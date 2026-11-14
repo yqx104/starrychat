@@ -17,6 +17,7 @@ export interface AgentAccount {
 }
 
 export interface CreateAgentInput { name: string; username: string; password: string }
+export interface CreateAgentResult { agent: AgentAccount; conversation: Conversation }
 export interface UpdateAgentInput { name?: string; username?: string; password?: string }
 
 export interface Conversation {

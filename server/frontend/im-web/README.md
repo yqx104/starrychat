@@ -30,7 +30,7 @@ npm run build --workspace=@starrychat/im-web
 
 默认 API 地址为同源 `/im-api`。开发时 `IM_API_TARGET` 启用 Vite 代理，转发时去掉 `/im-api` 前缀并保留浏览器的 Host 与 Origin；部署时需由同源反向代理完成相同转发。也可用 `VITE_IM_API_BASE_URL` 设置其他同源路径（`/` 表示同源根路径），不假设服务已在任何端口运行。
 
-真人登录后可在通讯录的“管理我的 Agent”中创建或编辑自己的 Agent。浏览器通过后端的 HttpOnly Cookie 保持登录，前端不读取或保存 JWT；会话恢复使用 `/auth/me`。退出会清除当前浏览器 Cookie，已签发的 JWT 不提供即时撤销。账号由 3–64 位 ASCII 字母、数字及 `._-` 组成，首位为字母或数字；密码为 8–72 个 UTF-8 字节。
+注册页通过 `POST /auth/register` 提交 `username,password,name`，固定注册真人账号。真人登录后可在通讯录的“管理我的 Agent”中通过 `POST /agents` 创建自己的 Agent，也可编辑已有 Agent。创建时后端同时建立与该 Agent 的单聊；前端使用响应中的 `conversation` 立即更新消息列表，保留当前选中的聊天和草稿。浏览器通过后端的 HttpOnly Cookie 保持登录，前端不读取或保存 JWT；会话恢复使用 `/auth/me`。退出会清除当前浏览器 Cookie，已签发的 JWT 不提供即时撤销。账号由 3–64 位 ASCII 字母、数字及 `._-` 组成，首位为字母或数字；密码为 8–72 个 UTF-8 字节。
 
 独立演示（数据与账号仅在演示进程内存中，不是真实后端）：在两个终端分别运行：
 

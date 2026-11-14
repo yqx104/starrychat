@@ -16,11 +16,11 @@ import (
 const TokenCookie = "im_token"
 
 type AuthService interface {
-	Register(context.Context, model.RequestContext, model.RegisterInput) (model.Participant, error)
+	Register(context.Context, model.RegisterInput) (model.Participant, error)
 	Login(context.Context, string, string) (model.Participant, error)
 	AuthenticatedParticipant(context.Context, string) (model.Participant, error)
 	ListAgents(context.Context, model.RequestContext) ([]model.AgentAccount, error)
-	CreateAgent(context.Context, model.RequestContext, model.CreateAgentInput) (model.AgentAccount, error)
+	CreateAgent(context.Context, model.RequestContext, model.CreateAgentInput) (model.CreateAgentResult, error)
 	UpdateAgent(context.Context, model.RequestContext, model.UpdateAgentInput) (model.AgentAccount, error)
 }
 
@@ -112,7 +112,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) register(w http.ResponseWriter, r *http.Request) {
-	body, err := bodyObject(r, []string{"username", "password", "name", "kind"}, false)
+	body, err := bodyObject(r, []string{"username", "password", "name"}, false)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -125,26 +125,7 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	kind, err := bodyText(body["kind"], "kind")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	input.Kind = model.ParticipantKind(kind)
-	var caller RequestContext
-	if input.Kind == model.Agent {
-		participant, transport, err := a.authenticate(r)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		caller.ParticipantID = participant.ParticipantID
-		if _, _, err := a.renew(w, r, caller.ParticipantID, transport); err != nil {
-			writeError(w, err)
-			return
-		}
-	}
-	participant, err := a.accounts.Register(r.Context(), caller, input)
+	participant, err := a.accounts.Register(r.Context(), input)
 	if err != nil {
 		writeError(w, err)
 		return

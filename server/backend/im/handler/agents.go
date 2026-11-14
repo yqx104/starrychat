@@ -2,8 +2,8 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 	"starrychat/backend/im/model"
+	"strings"
 )
 
 func (a *API) agents(w http.ResponseWriter, r *http.Request, caller RequestContext) {
@@ -67,12 +67,12 @@ func (a *API) agents(w http.ResponseWriter, r *http.Request, caller RequestConte
 		values[key] = &value
 	}
 	if r.Method == "POST" {
-		agent, err := a.accounts.CreateAgent(r.Context(), caller, model.CreateAgentInput{Name: *values["name"], Username: *values["username"], Password: *values["password"]})
+		result, err := a.accounts.CreateAgent(r.Context(), caller, model.CreateAgentInput{Name: *values["name"], Username: *values["username"], Password: *values["password"]})
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		writeJSON(w, 201, map[string]any{"agent": agent})
+		writeJSON(w, 201, result)
 		return
 	}
 	agent, err := a.accounts.UpdateAgent(r.Context(), caller, model.UpdateAgentInput{ParticipantID: id, Name: values["name"], Username: values["username"], Password: values["password"]})

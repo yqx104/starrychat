@@ -43,6 +43,7 @@ const server = http.createServer(async (req, res) => {
     const method = req.method;
     if (url.pathname === '/auth/register' && method === 'POST') {
       const body = await readBody(req);
+      if (Object.keys(body).some((key) => !['username', 'password', 'name'].includes(key))) return fail(res, 400, '注册仅接受账号、密码和名称');
       if (demoAccount) return fail(res, 409, '真人账号已存在');
       demoAccount = { username: body.username, password: body.password }; people[0].name = body.name;
       return reply(res, 201, { participant: people[0] });
