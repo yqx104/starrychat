@@ -10,6 +10,20 @@ import { test } from 'node:test';
 import { loadConfig } from '../src/config/config.ts';
 import { Store } from '../src/repository/store.ts';
 
+test('agent_root must be an explicit absolute path; obsolete data_root is rejected', t => {
+  const root = mkdtempSync(join(tmpdir(), 'adaptor-config-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, 'config.json');
+  const base = { address: '127.0.0.1:4183', adaptor_id: 'test', im_base_url: 'http://127.0.0.1:4180',
+    trigger_ws_url: 'ws://127.0.0.1:4182', sqlite_path: 'test.sqlite' };
+  writeFileSync(path, JSON.stringify(base));
+  assert.throws(() => loadConfig(path), /agent_root/);
+  writeFileSync(path, JSON.stringify({ ...base, agent_root: 'relative' }));
+  assert.throws(() => loadConfig(path), /绝对路径/);
+  writeFileSync(path, JSON.stringify({ ...base, agent_root: join(root, 'agents'), data_root: 'runtime' }));
+  assert.throws(() => loadConfig(path), /data_root.*迁移/);
+});
+
 test('cmd entrypoints initialize an empty database, reject overwrites and shut down cleanly', { timeout: 15000 }, async t => {
   for (const [directory, extension] of [['src', 'ts'], ['dist', 'js']]) {
     await t.test(directory, async t => {
@@ -17,7 +31,7 @@ test('cmd entrypoints initialize an empty database, reject overwrites and shut d
       t.after(() => rmSync(root, { recursive: true, force: true }));
       const configPath = join(root, 'config.json');
       writeFileSync(configPath, JSON.stringify({ address: '127.0.0.1:0', adaptor_id: 'entrypoint-test',
-        im_base_url: 'http://127.0.0.1:9', trigger_ws_url: 'ws://127.0.0.1:9', sqlite_path: 'test.sqlite' }));
+        im_base_url: 'http://127.0.0.1:9', trigger_ws_url: 'ws://127.0.0.1:9', sqlite_path: 'test.sqlite', agent_root: join(root, 'agents') }));
       const config = loadConfig(configPath);
       assert.equal(config.pi_cli_path, fileURLToPath(new URL('../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)));
       const init = fileURLToPath(new URL(`../${directory}/cmd/init-db.${extension}`, import.meta.url));

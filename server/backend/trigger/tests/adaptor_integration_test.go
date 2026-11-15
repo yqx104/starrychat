@@ -209,7 +209,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	}
 	address := listener.Addr().String()
 	listener.Close()
-	config := writeConfig("adaptor.json", map[string]any{"address": address, "im_base_url": imURL, "trigger_ws_url": wsURL, "adaptor_id": newID(t), "sqlite_path": filepath.Join(directory, "adaptor.sqlite")})
+	config := writeConfig("adaptor.json", map[string]any{"address": address, "im_base_url": imURL, "trigger_ws_url": wsURL, "adaptor_id": newID(t), "sqlite_path": filepath.Join(directory, "adaptor.sqlite"), "agent_root": filepath.Join(directory, "agents")})
 	if output, err := exec.CommandContext(t.Context(), "node", filepath.Join(backend, "src/cmd/init-db.ts"), config).CombinedOutput(); err != nil {
 		t.Fatalf("init sqlite: %v %s", err, output)
 	}
@@ -389,17 +389,14 @@ func TestAdaptorEndToEnd(t *testing.T) {
 		fmt.Fprint(w, "data: {\"id\":\"local\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"local-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 	}))
 	defer modelServer.Close()
-	piConfig := filepath.Join(directory, "pi-config")
-	if err := os.Mkdir(piConfig, 0700); err != nil {
-		t.Fatal(err)
-	}
-	writeConfig("pi-config/models.json", map[string]any{"providers": map[string]any{"local-adaptor-test": map[string]any{
+	piConfig := filepath.Join("agents", agentID, "pi-config")
+	writeConfig(filepath.Join(piConfig, "models.json"), map[string]any{"providers": map[string]any{"local-adaptor-test": map[string]any{
 		"baseUrl": modelServer.URL + "/v1", "api": "openai-completions", "apiKey": "local-test-only",
 		"models": []any{map[string]any{"id": "local-model", "contextWindow": 128000, "maxTokens": 1024}},
 	}}})
-	writeConfig("pi-config/settings.json", map[string]any{"retry": map[string]bool{"enabled": false}, "compaction": map[string]bool{"enabled": false}})
+	writeConfig(filepath.Join(piConfig, "settings.json"), map[string]any{"retry": map[string]bool{"enabled": false}, "compaction": map[string]bool{"enabled": false}})
 	authJSON(t, clientURL, "PATCH", "/agents/"+agentID+"/runtime", "", map[string]any{
-		"harness": "pi", "cwd": directory, "config": map[string]string{"pi_config_dir": piConfig, "provider": "local-adaptor-test", "model": "local-model"},
+		"harness": "pi", "config": map[string]string{"provider": "local-adaptor-test", "model": "local-model"},
 	}, 200)
 	mainSession := func() map[string]any {
 		return authJSON(t, clientURL, "GET", "/agents/"+agentID+"/main-session", "", nil, 200)

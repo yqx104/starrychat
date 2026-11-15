@@ -9,7 +9,8 @@ export interface InboxItem {
   message: { content: string; message_id: string; channel_type: string; conversation_id: string; message_seq: number; sender_id: string };
 }
 export interface Config { adaptor_id: string; im_base_url: string; trigger_ws_url: string }
-export interface RuntimeConfig { harness: 'pi'; cwd: string; config: { pi_config_dir: string; provider?: string; model?: string; extensions?: string[] } }
+export interface RuntimeConfig { harness: 'pi'; config: { provider?: string; model?: string; extensions?: string[] } }
+export interface RuntimeDirectories { cwd: string; pi_config_dir: string; sessions_dir: string }
 export interface MainSession {
   status: string; blocked?: string | null; last_error: string | null; pending?: number;
   model?: { provider: string; id: string } | null;

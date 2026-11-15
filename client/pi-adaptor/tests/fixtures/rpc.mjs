@@ -20,8 +20,10 @@ function persist(text) {
 }
 createInterface({ input: process.stdin }).on('line', line => {
   const command = JSON.parse(line);
-  appendFileSync('commands.jsonl', JSON.stringify({ ...command, pid: process.pid, activeChecks }) + '\n');
-  if (command.type === 'get_state') {
+  appendFileSync('commands.jsonl', JSON.stringify({ ...command, pid: process.pid, activeChecks, envKeys: Object.keys(process.env) }) + '\n');
+  if (command.type === 'get_available_models') {
+    response(command, { models: config.unconfigured ? [] : [{ provider: 'fixture', id: 'fixture' }] });
+  } else if (command.type === 'get_state') {
     activeChecks++;
     setTimeout(() => {
       activeChecks--;

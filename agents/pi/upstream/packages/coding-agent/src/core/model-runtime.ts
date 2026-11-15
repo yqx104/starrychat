@@ -211,7 +211,15 @@ export class ModelRuntime implements Models {
 		this.modelNetworkEnabled = modelNetworkEnabled;
 		this.defaultBuiltins = new Map(providers.map((provider) => [provider.id, provider]));
 		for (const [providerId, provider] of this.defaultBuiltins) this.builtins.set(providerId, provider);
-		this.models = createModels({ credentials, modelsStore });
+		this.models = createModels({
+			credentials,
+			modelsStore,
+			// Adaptor instances authenticate only from their private config files.
+			authContext:
+				process.env.PI_ADAPTOR_CONFIG_ONLY === "1"
+					? { env: async () => undefined, fileExists: async () => false }
+					: undefined,
+		});
 		this.rebuildProviders();
 	}
 
@@ -226,7 +234,25 @@ export class ModelRuntime implements Models {
 				? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
 				: new InMemoryCodingAgentModelsStore());
 		const builtinModelDataGeneratedAt = builtinProviderCatalog.getBuiltinModelDataGeneratedAt();
-		const providers = builtinProviderCatalog.builtinProviders().map((provider) => {
+		const providers = builtinProviderCatalog.builtinProviders().map((original) => {
+			let provider = original;
+			if (process.env.PI_ADAPTOR_CONFIG_ONLY === "1" && original.auth.apiKey) {
+				const apiKey = original.auth.apiKey;
+				provider = {
+					...original,
+					auth: {
+						...original.auth,
+						apiKey: {
+							...apiKey,
+							// Profile names and ambient cloud credential chains are not private credentials.
+							check: apiKey.check
+								? async (input) => input.credential?.key ? apiKey.check!(input) : undefined
+								: undefined,
+							resolve: async (input) => input.credential?.key ? apiKey.resolve(input) : undefined,
+						},
+					},
+				};
+			}
 			if (provider.id === "radius") return provider;
 			// OpenRouter narrows the catalog to the models, limits and prices of the user's key.
 			if (provider.id === "openrouter") {

@@ -21,7 +21,9 @@ async function until(condition: () => boolean, description: string) {
 
 test('WS → SQLite ACK → Dispatcher → real Pi RPC → local model/tool → events; restart retains history', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'adaptor-real-pi-'));
-  const piConfig = join(directory, 'pi'); mkdirSync(piConfig);
+  const agentRoot = join(directory, 'agents');
+  const workspace = join(agentRoot, 'a', 'workspace'); mkdirSync(workspace, { recursive: true });
+  const piConfig = join(agentRoot, 'a', 'pi-config'); mkdirSync(piConfig);
   const requests: any[] = [];
   let releaseFirst!: () => void;
   const firstRelease = new Promise<void>(resolve => { releaseFirst = resolve; });
@@ -32,7 +34,7 @@ test('WS → SQLite ACK → Dispatcher → real Pi RPC → local model/tool → 
     if (requests.length === 1) await firstRelease;
     response.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const delta = requests.length === 1 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call_local_write', type: 'function',
-      function: { name: 'write', arguments: JSON.stringify({ path: join(directory, 'proof.txt'), content: 'MVP tool executed' }) } }] } :
+      function: { name: 'write', arguments: JSON.stringify({ path: 'proof.txt', content: 'MVP tool executed' }) } }] } :
       { role: 'assistant', content: 'MVP verified' };
     for (const choice of [{ index: 0, delta, finish_reason: null }, { index: 0, delta: {}, finish_reason: requests.length === 1 ? 'tool_calls' : 'stop' }]) {
       response.write(`data: ${JSON.stringify({ id: 'local-completion', object: 'chat.completion.chunk', created: 1, model: 'local-model', choices: [choice] })}\n\n`);
@@ -46,17 +48,17 @@ test('WS → SQLite ACK → Dispatcher → real Pi RPC → local model/tool → 
     models: [{ id: 'local-model', name: 'Local test model', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 1024,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }), { mode: 0o600 });
-  writeFileSync(join(piConfig, 'settings.json'), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }));
+  writeFileSync(join(piConfig, 'settings.json'), JSON.stringify({ defaultProvider: 'local-mvp-test', defaultModel: 'local-model', retry: { enabled: false }, compaction: { enabled: false } }));
   const trigger = new WebSocketServer({ port: 0, host: '127.0.0.1' }); await once(trigger, 'listening');
   const triggerAddress = trigger.address(); assert(typeof triggerAddress === 'object');
   const path = join(directory, 'adaptor.sqlite'); const db = new DatabaseSync(path);
   db.exec(readFileSync(new URL('../sql/schema.sql', import.meta.url), 'utf8')); db.close();
   const store = new Store(path);
   const config = { address: '127.0.0.1:4183', im_base_url: 'http://127.0.0.1:9', trigger_ws_url: `ws://127.0.0.1:${triggerAddress.port}`,
-    adaptor_id: 'real-pi-test', sqlite_path: path, data_root: join(directory, 'runtime'),
+    adaptor_id: 'real-pi-test', sqlite_path: path, agent_root: agentRoot,
     pi_cli_path: fileURLToPath(new URL('../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)) };
   store.add({ agent_id: 'a', name: 'a', username: 'a', token: 'private-im-test-token', expires_at: Date.now() + 3600000 });
-  store.configure('a', directory, { pi_config_dir: piConfig, provider: 'local-mvp-test', model: 'local-model' });
+  store.configure('a', workspace, { pi_config_dir: piConfig });
   let sessions = new Sessions(store, config); let dispatcher = new Dispatcher(store, sessions);
   sessions.onReady = id => dispatcher.wake(id);
   const connections = new Connections(store, config, id => dispatcher.wake(id));
@@ -97,10 +99,13 @@ test('WS → SQLite ACK → Dispatcher → real Pi RPC → local model/tool → 
   await until(() => connections.status('a').connection_state === 'reconnecting', 'Trigger disconnect');
   assert.equal(store.agent('a')!.enabled, 1); assert(sessions.current('a'));
   releaseFirst();
-  await until(() => existsSync(join(directory, 'proof.txt')) && sessions.view('a').status === 'idle', 'tool and settled event');
-  assert.equal(readFileSync(join(directory, 'proof.txt'), 'utf8'), 'MVP tool executed');
+  await until(() => existsSync(join(workspace, 'proof.txt')) && sessions.view('a').status === 'idle', 'tool and settled event');
+  assert.equal(readFileSync(join(workspace, 'proof.txt'), 'utf8'), 'MVP tool executed');
   assert(requests.some(body => JSON.stringify(body.messages).includes('Include this group input.')));
   const original = sessions.view('a').session!;
+  assert.equal(original.cwd, workspace);
+  assert(original.native_ref!.session_file!.startsWith(join(agentRoot, 'a', 'sessions', original.session_id) + '/'));
+  assert.equal(existsSync(join(directory, 'proof.txt')), false);
   const events = sessions.readEvents(original.session_id, 0).events;
   assert(events.some(event => event.type === 'tool' && event.tool === 'write'));
   assert(events.some(event => event.type === 'text' && event.text?.includes('MVP verified')));

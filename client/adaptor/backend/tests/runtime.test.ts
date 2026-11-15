@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
 import { Store } from '../src/repository/store.ts';
 import type { Delivery } from '../src/model/types.ts';
+import { writeModelSelection } from '@starrychat/pi-adaptor';
 import { Sessions } from '../src/service/sessions.ts';
+import { prepareAgentDirectories } from '../src/service/directories.ts';
 import { Dispatcher } from '../src/service/dispatch.ts';
 import { Connections } from '../src/service/connections.ts';
 import { Agents } from '../src/service/agents.ts';
@@ -32,20 +34,21 @@ function setup(t: TestContext) {
   const db = new DatabaseSync(path); db.exec(schema); db.close();
   const store = new Store(path);
   const config = { address: '127.0.0.1:4183', im_base_url: 'http://127.0.0.1:9', trigger_ws_url: 'ws://127.0.0.1:9',
-    adaptor_id: 'fixture', sqlite_path: path, data_root: join(directory, 'runtime'), pi_cli_path: cliPath };
+    adaptor_id: 'fixture', sqlite_path: path, agent_root: join(directory, 'agents'), pi_cli_path: cliPath };
   const sessions = new Sessions(store, config);
   const dispatcher = new Dispatcher(store, sessions); sessions.onReady = id => dispatcher.wake(id);
   const connections = new Connections(store, config, id => dispatcher.wake(id));
   t.after(async () => { connections.close(); dispatcher.stop(); await sessions.close(); await dispatcher.drain(); store.close(); rmSync(directory, { recursive: true, force: true }); });
   const add = (id: string, fixture = {}) => {
-    const cwd = join(directory, id); mkdirSync(cwd);
+    const { cwd, pi_config_dir } = prepareAgentDirectories(config, id);
     writeFileSync(join(cwd, 'fixture.json'), JSON.stringify(fixture));
     store.add({ agent_id: id, username: id, name: id, token: 'private-im-token', expires_at: Date.now() + 3600000 });
-    store.configure(id, cwd, { pi_config_dir: join(cwd, 'pi') });
+    writeModelSelection(pi_config_dir, { provider: 'fixture', model: 'fixture' });
+    store.configure(id, cwd, { pi_config_dir });
     return cwd;
   };
   const inputs = (id: string) => store.inbox(id, Number.MAX_SAFE_INTEGER, 100).messages;
-  const commands = (id: string) => readFileSync(join(directory, id, 'commands.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const commands = (id: string) => readFileSync(join(config.agent_root, id, 'workspace', 'commands.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   const prompts = (id: string) => commands(id).filter(command => command.type === 'prompt');
   return { directory, store, sessions, dispatcher, connections, config, add, inputs, commands, prompts };
 }
@@ -169,6 +172,11 @@ test('runtime HTTP API enforces config lifecycle, exposes safe events and valida
   };
   await f.sessions.reconcile('a');
   const runtime = (await request('/agents/a/runtime')).runtime;
+  const beforeConfig = f.store.session('a');
+  await request('/agents/a/runtime', 'PATCH', { ...runtime, cwd: f.directory }, 400);
+  await request('/agents/a/runtime', 'PATCH', { ...runtime, config: { pi_config_dir: f.directory } }, 400);
+  await request('/agents/a/runtime', 'PATCH', { ...runtime, config: { provider: 'only-provider' } }, 400);
+  assert.deepEqual(f.store.session('a'), beforeConfig);
   await request('/agents/a/runtime', 'PATCH', runtime, 409);
   await request('/agents/a/runtime', 'PATCH', { ...runtime, config: { api_key: 'should-not-be-stored' } }, 400);
   f.store.receive(delivery('a', 'show-output')); f.dispatcher.start();
@@ -182,6 +190,8 @@ test('runtime HTTP API enforces config lifecycle, exposes safe events and valida
   assert.equal(f.store.agent('a')!.enabled, 1);
   await request('/agents/a', 'PATCH', { enabled: false });
   await request('/agents/a/runtime', 'PATCH', runtime);
+  assert.equal(f.store.session('a')!.session_id, sessionId);
+  assert.equal(f.store.session('a')!.cwd, join(f.config.agent_root, 'a', 'workspace'));
   const id = Number(f.inputs('a')[0].id);
   f.store.db.prepare("UPDATE inbox SET state='needs_recovery' WHERE id=?").run(id);
   await request(`/sessions/${sessionId}/inputs/${id}/resolve`, 'POST', { action: 'retry' }, 400);
@@ -192,6 +202,29 @@ test('runtime HTTP API enforces config lifecycle, exposes safe events and valida
   const crossOrigin = await fetch(`http://127.0.0.1:${address.port}/agents`, { headers: { Origin: 'http://other.example' } });
   assert.equal(crossOrigin.status, 403);
   await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
+});
+
+test('changing agent_root refuses to silently replace existing paths or history', async t => {
+  const f = setup(t); f.add('a');
+  await f.sessions.reconcile('a'); f.dispatcher.start();
+  f.store.receive(delivery('a', 'preserve-history')); f.dispatcher.wake('a');
+  await until(() => f.inputs('a')[0].state === 'accepted');
+  f.dispatcher.stop(); await f.sessions.close(); await f.dispatcher.drain();
+  const record = f.store.session('a')!;
+  const ref = JSON.parse(record.native_ref_json!);
+  const before = readFileSync(ref.session_file);
+  const moved = new Sessions(f.store, { ...f.config, agent_root: join(f.directory, 'new-root') });
+  t.after(() => moved.close());
+  await moved.reconcile('a');
+  assert.equal(moved.view('a').status, 'error');
+  assert.match(moved.view('a').last_error!, /迁移/);
+  assert.deepEqual(f.store.session('a'), record);
+  assert.deepEqual(readFileSync(ref.session_file), before);
+  f.store.enable('a', false);
+  await assert.rejects(moved.configure('a', { harness: 'pi', config: {} }), /迁移/);
+  await moved.close();
+  assert.equal(existsSync(join(f.directory, 'new-root')), false, 'invalid layout must not create empty history directories');
+  assert.deepEqual(f.store.session('a'), record);
 });
 
 test('startup rejects an outdated schema without changing the database or creating backups', t => {

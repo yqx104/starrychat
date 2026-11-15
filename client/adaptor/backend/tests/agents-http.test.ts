@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -38,7 +38,7 @@ test('agent HTTP routes preserve login, identity checks, enablement and safe res
     connected++;
     socket.send(JSON.stringify({ type: 'ready', agent_id: 'a', token: 'private-renewed-token', expires_at: Date.now() + 3600000 }));
   });
-  const config = { address: '127.0.0.1:0', adaptor_id: 'http-test', sqlite_path: path,
+  const config = { address: '127.0.0.1:0', adaptor_id: 'http-test', sqlite_path: path, agent_root: join(directory, 'agents'),
     im_base_url: `http://127.0.0.1:${imAddress.port}`, trigger_ws_url: `ws://127.0.0.1:${triggerAddress.port}` };
   const sessions = new Sessions(store, config);
   const connections = new Connections(store, config);
@@ -65,8 +65,20 @@ test('agent HTTP routes preserve login, identity checks, enablement and safe res
   assert.deepEqual(await request('/healthz'), { status: 'ok' });
   assert.deepEqual(await request('/agents'), { agents: [] });
   await request('/agents', 'POST', { username: 'a', password: 'wrong' }, 401);
+  assert.equal(existsSync(config.agent_root), false, 'failed login must not create directories');
+  await request('/agents', 'POST', { username: '../escape', password: 'fixture-password' }, 400);
+  assert.equal(store.agents().length, 0);
+  const root = config.agent_root;
+  config.agent_root = join(directory, 'blocked'); writeFileSync(config.agent_root, 'not a directory');
+  await request('/agents', 'POST', { username: 'a', password: 'fixture-password' }, 500);
+  assert.equal(store.agents().length, 0, 'directory failure must not save a partially connected Agent');
+  assert.equal(connected, 0);
+  config.agent_root = root;
   const created = await request('/agents', 'POST', { username: 'a', password: 'fixture-password' }, 201);
   assert.equal(created.agent.agent_id, 'a'); assert.equal(created.agent.enabled, true);
+  assert.deepEqual(readdirSync(join(root, 'a')).sort(), ['pi-config', 'sessions', 'workspace']);
+  writeFileSync(join(root, 'a', 'workspace', 'keep.txt'), 'existing work');
+  assert.equal((await request('/agents/a/runtime')).directories.cwd, join(root, 'a', 'workspace'));
   for (let i = 0; i < 120 && connections.status('a').connection_state !== 'online'; i++) await delay(25);
   assert.equal(connections.status('a').connection_state, 'online');
   assert.equal(store.agent('a')!.token, 'private-renewed-token');
@@ -82,6 +94,7 @@ test('agent HTTP routes preserve login, identity checks, enablement and safe res
   await request('/agents/a', 'PATCH', { enabled: true });
   for (let i = 0; i < 120 && connected < 2; i++) await delay(25);
   assert.equal(connected, 2);
+  assert.equal(readFileSync(join(root, 'a', 'workspace', 'keep.txt'), 'utf8'), 'existing work');
   assert.equal((await request('/agents')).agents.length, 1);
   assert.deepEqual(await request('/agents/a/inbox'), { messages: [], has_more: false });
   await request('/agents/a/inbox?limit=0', 'GET', undefined, 400);

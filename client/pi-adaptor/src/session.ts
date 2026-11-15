@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, openSync, readSync, closeSync, readdirSync, read
 import { join, resolve } from 'node:path';
 import type { RpcClient } from '@earendil-works/pi-coding-agent';
 import { displayEvent } from './events.ts';
-import { InputError, errorMessage, type Input, type NativeRef, type OpenConfig, type Receipt, type Session, type SessionEvent, type SessionState } from './types.ts';
+import { ConfigurationError, InputError, errorMessage, type Input, type NativeRef, type OpenConfig, type Receipt, type Session, type SessionEvent, type SessionState } from './types.ts';
+import { isolatedEnvironment, readModelSelection, readPrivateConfig } from './config.ts';
 
 function header(path: string): { type: string; id: string } {
   const fd = openSync(path, 'r');
@@ -49,6 +50,10 @@ export class PiSession implements Session {
 
   async open(): Promise<SessionState> {
     if (this.rpc || this.closed) throw new Error('会话实例不能重复打开');
+    const selection = readModelSelection(this.config.settings.pi_config_dir);
+    if (!selection.provider || !selection.model) throw new ConfigurationError('请在运行配置中选择 Provider 和 Model（保存到 pi-config/settings.json）');
+    readPrivateConfig(this.config.settings.pi_config_dir, 'auth.json');
+    readPrivateConfig(this.config.settings.pi_config_dir, 'models.json');
     if (!statSync(this.config.cliPath).isFile()) throw new Error('Pi RPC 入口不存在，请先构建 Pi');
     if (!statSync(this.config.cwd).isDirectory()) throw new Error('Pi 工作目录不存在');
     this.locate();
@@ -61,7 +66,7 @@ export class PiSession implements Session {
       ...(this.ref.session_file ? ['--session', this.ref.session_file] : ['--session-id', this.ref.session_id]),
       ...(settings.extensions ?? []).flatMap(path => ['--extension', path])];
     this.rpc = new RpcClient({ cliPath: this.config.cliPath, cwd: this.config.cwd,
-      env: { PI_CODING_AGENT_DIR: settings.pi_config_dir }, provider: settings.provider, model: settings.model, args });
+      inheritEnv: false, env: isolatedEnvironment(settings.pi_config_dir), args });
     this.rpc.onEvent(event => {
       if (this.closed) return;
       if (event.type === 'agent_start') this.unsettled = true;
@@ -74,7 +79,14 @@ export class PiSession implements Session {
     });
     try {
       await this.rpc.start();
+      const available = await this.rpc.getAvailableModels();
+      if (!available.some(model => model.provider === selection.provider && model.id === selection.model)) {
+        throw new ConfigurationError('所选模型不可用，请检查此 Agent 的 pi-config/models.json 和 auth.json，配置模型及认证');
+      }
       const state = await this.getState();
+      if (state.model?.provider !== selection.provider || state.model.id !== selection.model) {
+        throw new ConfigurationError('Pi 未加载指定模型，请检查此 Agent 的 pi-config 配置');
+      }
       this.timer = setInterval(() => {
         if (!this.checking) void this.getState().catch(error => this.emit({ type: 'error', phase: 'probe', text: errorMessage(error) }));
       }, 10000);

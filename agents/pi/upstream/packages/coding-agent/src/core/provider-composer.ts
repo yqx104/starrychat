@@ -448,7 +448,8 @@ function composeApiKeyAuth(
 				return resolved ? { type: "api_key", source: resolved.source } : undefined;
 			}
 			if (rawKey !== undefined) {
-				if (isCommandConfigValue(rawKey)) return { type: "api_key", source: "configured API key" };
+				if (isCommandConfigValue(rawKey)) return process.env.PI_ADAPTOR_CONFIG_ONLY === "1"
+					? undefined : { type: "api_key", source: "configured API key" };
 				const envNames = getConfigValueEnvVarNames(rawKey);
 				for (const name of envNames) {
 					if ((await input.ctx.env(name)) === undefined) return undefined;

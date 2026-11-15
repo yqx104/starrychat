@@ -213,6 +213,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
+	const privateConfigOnly = process.env.PI_ADAPTOR_CONFIG_ONLY === "1";
+	if (privateConfigOnly) {
+		const provider = settingsManager.getDefaultProvider();
+		const id = settingsManager.getDefaultModel();
+		model = provider && id && modelRuntime.hasConfiguredAuth(provider) ? modelRuntime.getModel(provider, id) : undefined;
+	}
 
 	// Assistant messages name the physical model that answered, so a virtual selection is only in
 	// model_change entries.
@@ -221,7 +227,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	);
 
 	// If session has data, try to restore model from it
-	if (!model && hasExistingSession && sessionModel) {
+	if (!privateConfigOnly && !model && hasExistingSession && sessionModel) {
 		const restoredModel = modelRuntime.getModel(sessionModel.provider, sessionModel.modelId);
 		if (restoredModel && modelRuntime.hasConfiguredAuth(restoredModel.provider)) {
 			model = restoredModel;
@@ -232,7 +238,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// If still no model, use findInitialModel (checks settings default, then provider defaults)
-	if (!model) {
+	if (!privateConfigOnly && !model) {
 		const result = await findInitialModel({
 			scopedModels: [],
 			isContinuing: hasExistingSession,

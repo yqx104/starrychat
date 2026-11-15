@@ -1,5 +1,5 @@
 export interface NativeRef { session_id: string; session_file: string | null }
-export interface PiSettings { pi_config_dir: string; provider?: string; model?: string; extensions?: string[] }
+export interface PiSettings { pi_config_dir: string; extensions?: string[] }
 export interface OpenConfig {
   cliPath: string; cwd: string; sessionDir: string; settings: PiSettings;
   nativeRef: NativeRef; allowCreate: boolean;
@@ -25,6 +25,8 @@ export interface Session {
   persistedInputs(): Promise<Set<string>>;
 }
 export type SessionFactory = (config: OpenConfig) => Session;
+
+export class ConfigurationError extends Error {}
 
 export class InputError extends Error {
   kind: 'retryable' | 'rejected' | 'unknown';

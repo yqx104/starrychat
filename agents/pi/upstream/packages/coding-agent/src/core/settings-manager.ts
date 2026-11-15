@@ -222,6 +222,10 @@ export class FileSettingsStorage implements SettingsStorage {
 	}
 
 	withLock(scope: SettingsScope, fn: (current: string | undefined) => string | undefined): void {
+		if (scope === "project" && process.env.PI_ADAPTOR_CONFIG_ONLY === "1") {
+			fn(undefined);
+			return;
+		}
 		const path = scope === "global" ? this.globalSettingsPath : this.projectSettingsPath;
 		const dir = dirname(path);
 

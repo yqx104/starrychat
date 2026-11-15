@@ -86,7 +86,7 @@ function parseConfigValueReference(config: string): ConfigValueReference {
 }
 
 function resolveEnvConfigValue(name: string, env?: Record<string, string>): string | undefined {
-	return env?.[name] || process.env[name] || undefined;
+	return env?.[name] || (process.env.PI_ADAPTOR_CONFIG_ONLY === "1" ? undefined : process.env[name]) || undefined;
 }
 
 function getTemplateEnvVarNames(parts: TemplatePart[]): string[] {
@@ -132,6 +132,7 @@ export function isCommandConfigValue(config: string): boolean {
 }
 
 export function isConfigValueConfigured(config: string, env?: Record<string, string>): boolean {
+	if (process.env.PI_ADAPTOR_CONFIG_ONLY === "1" && isCommandConfigValue(config)) return false;
 	return getMissingConfigValueEnvVarNames(config, env).length === 0;
 }
 
@@ -145,6 +146,7 @@ export function isConfigValueConfigured(config: string, env?: Record<string, str
 export function resolveConfigValue(config: string, env?: Record<string, string>): string | undefined {
 	const reference = parseConfigValueReference(config);
 	if (reference.type === "command") {
+		if (process.env.PI_ADAPTOR_CONFIG_ONLY === "1") return undefined;
 		return executeCommand(reference.config);
 	}
 	return resolveTemplate(reference.parts, env);
@@ -221,6 +223,7 @@ function executeCommand(commandConfig: string): string | undefined {
 export function resolveConfigValueUncached(config: string, env?: Record<string, string>): string | undefined {
 	const reference = parseConfigValueReference(config);
 	if (reference.type === "command") {
+		if (process.env.PI_ADAPTOR_CONFIG_ONLY === "1") return undefined;
 		return executeCommandUncached(reference.config);
 	}
 	return resolveTemplate(reference.parts, env);

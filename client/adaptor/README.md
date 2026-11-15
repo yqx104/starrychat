@@ -40,11 +40,11 @@ npm run build:adaptor
   "trigger_ws_url": "ws://127.0.0.1:4182/agent-connections",
   "adaptor_id": "本机首次生成并保留的实例标识",
   "sqlite_path": "adaptor.sqlite",
-  "data_root": "runtime"
+  "agent_root": "/Users/你的用户名/Desktop/starryChatWorkspace"
 }
 ```
 
-SQLite 和 `data_root` 路径相对于配置文件。Pi 默认运行仓库内 `agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js`；可用本机配置 `pi_cli_path` 指定其他构建路径。首次创建空库需要显式执行以下命令，已存在的数据库会被拒绝；服务启动只检查表结构，不自动建表或改表：
+SQLite 路径相对于配置文件。`agent_root` 必须显式配置为绝对路径，指向各 Agent 目录的共同父目录；旧的 `data_root` 配置不再接受。Pi 默认运行仓库内 `agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js`；可用本机配置 `pi_cli_path` 指定其他构建路径。首次创建空库需要显式执行以下命令，已存在的数据库会被拒绝；服务启动只检查表结构，不自动建表或改表：
 
 ```sh
 node client/adaptor/backend/src/cmd/init-db.ts "$PWD/localdeploy/adaptor/config.json"
@@ -72,18 +72,33 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 
 ## Pi 配置与生命周期
 
-接入账号后，在页面的“运行配置”中填写工作目录和 Pi 私有配置目录，可选填 provider/model（两者同时填写）和扩展绝对路径。只支持 `harness=pi`。模型凭据放在 Pi 配置目录内的 `auth.json`、`models.json` 或其引用的环境变量中，不通过 adaptor 的配置 API 传递密钥。IM 登录与模型认证互相独立；输入被明确拒绝时会显示具体原因。
+首次成功接入账号时，adaptor 在 `<agent_root>/<agent_id>/` 下自动创建 `workspace/`、`pi-config/`、`sessions/` 三个目录；创建失败时不会保存本机 Agent 记录。工作目录、Pi 私有配置目录和会话历史目录在“运行配置”页面只读展示，由后端统一计算。只支持 `harness=pi`。Provider、Model 必须同时填写，保存到该 Agent 的 `pi-config/settings.json` 中的 `defaultProvider`、`defaultModel`；清空两项后回到待配置。SQLite 只保留目录、扩展路径和会话绑定，不再另存模型选择。
+
+模型定义和自定义接口放在该 Agent 的 `pi-config/models.json`，API Key／OAuth 认证放在 `auth.json`（也支持 `models.json` 中的直接 API Key），密钥不通过 adaptor 配置 API 传递。Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AGENT_DIR` 和 `PI_ADAPTOR_CONFIG_ONLY=1` 使用实例私有配置；不读取宿主机的模型密钥、云认证环境变量或用户目录中的云认证链。配置值不执行 `!command`，环境变量引用仅能使用私有凭据内显式保存的 `env`。工作目录 `.pi/settings.json`、会话中的旧模型和模型目录缓存都不能替代私有模型选择或认证。普通 Pi CLI 不启用此模式时维持原行为。
+
+缺少模型选择、所选模型不可用、认证缺失或配置 JSON 无法读取时显示“待配置”；检查过程中创建的 RPC 会被关闭，不保留可派发实例。Trigger 连接、收件落盘和 ACK 继续工作，输入保留为 `pending`，配置完成前不提交给 Pi。IM 登录与模型认证互相独立。
 
 每个配置完整且启用的 Agent 常驻一个 Pi 主会话及一个 RPC 进程。来自不同单聊、群聊的输入汇入该主会话，并保留消息、发送者、来源和引用信息。统一的“启用／停用 Agent”控制 Trigger 连接和 Pi 进程；“中止当前执行”只中止工作。网络重连和重新认证不会更换主会话；Pi 故障不影响收件，Trigger 断线不停止 Pi。浏览器关闭不影响后台运行。
 
-修改已有运行配置需要先停用 Agent，保存后在下次启用时生效。会话绑定保持不变；不会因为更改工作目录、模型或凭据目录而清空历史。异常实例关闭后保留错误状态，由用户停用／重新启用重试，不自动循环重启。每个实例每 10 秒探测一次，单次 RPC 超时为原客户端的 30 秒；关闭先给 abort 最多 3 秒，再使用原客户端的 SIGTERM／SIGKILL 清理流程。
+运行中的实例修改配置需要先停用 Agent，保存后在下次启用时生效。“待配置”状态可在 Agent 启用时直接编辑；补齐私有认证文件后点“保存并检查”，检查成功才启动并继续派发积压输入。会话绑定保持不变；修改模型或扩展配置会保留原有历史。异常实例关闭后保留错误状态，由用户停用／重新启用重试，不自动循环重启。每个实例每 10 秒探测一次，单次 RPC 超时为原客户端的 30 秒；关闭先给 abort 最多 3 秒，再使用原客户端的 SIGTERM／SIGKILL 清理流程。
+
+目录布局如下；停用、重启和重新认证都会复用同一 Agent 的目录，文件不会被清空。工作目录决定 Pi 的初始执行位置，不提供文件访问隔离。
+
+```text
+<agent_root>/<agent_id>/
+├── workspace/                  # RPC cwd，工作文件
+├── pi-config/                  # auth.json、models.json、settings.json 等
+└── sessions/<session_id>/      # Pi 原生 JSONL 历史
+```
+
+已有 Agent 调整 `agent_root` 时必须先停服、备份，再手动搬迁其工作文件、Pi 私有配置和历史，并同步 SQLite 的 `sessions.cwd`、`config_json.pi_config_dir`、`native_ref_json.session_file`。保持 Agent、主会话和 Pi 原生会话 ID 不变；原工作目录若由项目或其他 Agent 共用，应先核对文件归属。验证启动和历史恢复后删除备份。启动不会自动搬迁或改写旧路径；路径不符合新布局时拒绝启动该 Pi 实例并显示错误，收件服务继续运行。
 
 ## 数据和鉴权
 
 完整表结构在 [backend/sql/schema.sql](backend/sql/schema.sql)：
 
 - `agents`：IM 身份、显示名与用户名缓存、短期 Bearer Token、到期时间、启用设置和时间戳。账号密码仅用于登录，不落盘；MVP 的 Token 保存在私有 SQLite 文件内，不返回给浏览器。
-- `sessions`：每个 Agent 一个稳定主 session，保存 harness、工作目录、运行配置和 Pi 原生 ID／会话文件引用。Pi 历史保存在 `<data_root>/<session_id>/`，空会话先保存 ID，文件实际生成后再保存路径。
+- `sessions`：每个 Agent 一个稳定主 session，保存 harness、工作目录、运行配置和 Pi 原生 ID／会话文件引用。Pi 历史保存在 `<agent_root>/<agent_id>/sessions/<session_id>/`，空会话先保存 ID，文件实际生成后再保存路径。
 - `inbox`：本地递增 ID、接收 Agent、消息 ID、channel ID、完整消息 JSON、投递状态、接收回执、最近错误和接收时间。`(agent_id, message_id)` 唯一；按本地 ID 提交输入，不用不同 IM 会话各自的 `message_seq` 做全局排序。
 
 后端把账号交给 IM 登录，确认 `kind=agent` 后使用 IM 返回的 ID，不允许客户端自行指定身份。Trigger 在每次 WS 握手时调用 IM `/auth/me` 验证身份，并通过 `ready` 帧将 IM 续签的 Token 返回给本机后端保存。客户端到期前重连续签，过期的凭据需要重新认证；Trigger 到期关闭连接。当前继承 IM 的七天滚动有效期和撤销能力，不新增设备授权体系。
@@ -103,7 +118,8 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 | `PATCH /agents/{id}` | `{enabled:boolean}`；返回 `{agent}` |
 | `POST /agents/{id}/reauthenticate` | `{username,password}`；必须是同一 IM Agent，返回 `{agent}` |
 | `GET /agents/{id}/inbox` | 可选 `before_id`、`limit`（默认 50，最大 100）；返回 `{messages,has_more}`，按本地 ID 降序 |
-| `GET/PATCH /agents/{id}/runtime` | 读取／保存 `{harness:"pi",cwd,config:{pi_config_dir,provider?,model?,extensions?}}`；修改已有配置前先停用 |
+| `GET /agents/{id}/runtime` | 返回 `{runtime,configuration_issue,directories:{cwd,pi_config_dir,sessions_dir}}`；始终返回 Pi 配置对象，模型选择来自私有文件；`sessions_dir` 是该 Agent 的历史根目录 |
+| `PATCH /agents/{id}/runtime` | 保存 `{harness:"pi",config:{provider?,model?,extensions?}}`；模型选择写入私有文件；拒绝客户端指定目录；运行中先停用，待配置可直接保存并检查 |
 | `GET /agents/{id}/main-session` | 返回主会话引用、状态、模型名称、队列数量、错误和派发阻塞状态 |
 | `POST /sessions/{id}/abort` | JSON `{}`；中止当前执行，保留进程与 Agent 启用状态 |
 | `GET /sessions/{id}/events` | 可选 `after`、`epoch`；返回 `{epoch,events,truncated}`，以进程 epoch 识别后端重启 |

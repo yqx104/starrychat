@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
-import { PiSession, InputError, type OpenConfig, type SessionEvent } from '../src/index.ts';
+import { PiSession, InputError, writeModelSelection, type OpenConfig, type SessionEvent } from '../src/index.ts';
 
 const cliPath = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
 const resources = new Map<string, PiSession[]>();
@@ -23,6 +23,7 @@ function fixture(t: TestContext, settings = {}): OpenConfig {
     resources.delete(cwd); rmSync(cwd, { recursive: true, force: true });
   });
   writeFileSync(join(cwd, 'fixture.json'), JSON.stringify(settings));
+  writeModelSelection(join(cwd, 'config'), { provider: 'fixture', model: 'fixture' });
   return { cliPath, cwd, sessionDir: join(cwd, 'sessions'), settings: { pi_config_dir: join(cwd, 'config') },
     nativeRef: { session_id: randomUUID(), session_file: null }, allowCreate: true };
 }
@@ -34,6 +35,9 @@ test('native RpcClient starts, steers, maps safe events and restores the exact p
   const session = create(config); session.onEvent(event => events.push(event));
   t.after(() => session.close());
   const empty = await session.open(); assert.equal(empty.nativeRef.session_file, null);
+  assert(commands(config)[0].envKeys.includes('PI_ADAPTOR_CONFIG_ONLY'));
+  assert(!commands(config)[0].envKeys.includes('DEEPSEEK_API_KEY'));
+  assert(!commands(config)[0].envKeys.includes('NODE_OPTIONS'));
   assert.equal((await session.sendInput({ id: 1, text: 'first' })).disposition, 'started');
   assert.equal((await session.sendInput({ id: 2, text: 'second' })).disposition, 'queued');
   assert.equal((await session.sendInput({ id: 3, text: 'HANDLED' })).disposition, 'handled');

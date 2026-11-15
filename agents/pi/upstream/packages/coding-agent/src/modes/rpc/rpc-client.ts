@@ -32,6 +32,8 @@ export interface RpcClientOptions {
 	cwd?: string;
 	/** Environment variables */
 	env?: Record<string, string>;
+	/** Set false to pass only env, without inheriting the host environment. */
+	inheritEnv?: boolean;
 	/** Provider to use */
 	provider?: string;
 	/** Model ID to use */
@@ -91,9 +93,9 @@ export class RpcClient {
 			args.push(...this.options.args);
 		}
 
-		const childProcess = spawn("node", [cliPath, ...args], {
+		const childProcess = spawn(process.execPath, [cliPath, ...args], {
 			cwd: this.options.cwd,
-			env: { ...process.env, ...this.options.env },
+			env: this.options.inheritEnv === false ? { ...this.options.env } : { ...process.env, ...this.options.env },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		this.process = childProcess;

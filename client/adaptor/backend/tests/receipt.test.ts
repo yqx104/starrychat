@@ -45,7 +45,7 @@ test('ACK follows committed SQLite write; failed writes replay; duplicate receip
     socket.send(JSON.stringify({ type: 'ready', agent_id: 'agent-a', token: 'renewed-test-token', expires_at: Date.now() + 3600000 }));
     socket.send(JSON.stringify({ type: 'delivery', ...item }));
   });
-  const config = { address: '127.0.0.1:4183', adaptor_id: 'test', im_base_url: 'http://localhost', trigger_ws_url: `ws://127.0.0.1:${address.port}`, sqlite_path: path };
+  const config = { address: '127.0.0.1:4183', adaptor_id: 'test', im_base_url: 'http://localhost', trigger_ws_url: `ws://127.0.0.1:${address.port}`, sqlite_path: path, agent_root: join(directory, 'agents') };
   let wakeups = 0;
   let connections = new Connections(store, config, () => { wakeups++; throw new Error('dispatch unavailable'); });
   t.after(() => { connections.close(); store.close(); });

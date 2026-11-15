@@ -5,6 +5,7 @@ import { login } from '../clients/im.ts';
 import { Store } from '../repository/store.ts';
 import { Connections } from './connections.ts';
 import { Sessions } from './sessions.ts';
+import { prepareAgentDirectories } from './directories.ts';
 
 export class Agents {
   private store: Store;
@@ -36,6 +37,7 @@ export class Agents {
       this.store.credentials(id, account.token, account.expires_at, account.name, account.username);
     } else {
       if (this.store.agent(account.agent_id)) throw new APIError(409, 'ALREADY_EXISTS', '该 Agent 已接入');
+      prepareAgentDirectories(this.config, account.agent_id);
       this.store.add(account);
     }
     this.connections.restart(account.agent_id);

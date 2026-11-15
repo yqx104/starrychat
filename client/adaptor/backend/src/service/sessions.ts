@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join } from 'node:path';
-import { statSync } from 'node:fs';
 import { APIError } from '../model/errors.ts';
-import { errorMessage, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
+import { ConfigurationError, errorMessage, readModelSelection, writeModelSelection, type ModelSelection, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
 import type { Config } from '../config/config.ts';
 import { Store } from '../repository/store.ts';
 import type { SessionRecord } from '../model/types.ts';
 import { createSession } from '../clients/harnesses.ts';
 import { formatInput } from './input.ts';
+import { agentDirectories, prepareAgentDirectories } from './directories.ts';
 
 export interface Runtime {
   session: Session; record: SessionRecord; ready: boolean; status: string;
@@ -15,15 +15,13 @@ export interface Runtime {
 }
 export interface DisplayEvent extends SessionEvent { id: number; at: number }
 
-function runtimeSettings(value: unknown, defaultDirectory: string): PiSettings {
+function runtimeSettings(value: unknown, defaultDirectory: string): PiSettings & ModelSelection {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new APIError(400, 'INVALID_REQUEST', 'config 必须为对象');
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['pi_config_dir', 'provider', 'model', 'extensions'].includes(key))) {
-    throw new APIError(400, 'INVALID_REQUEST', '只接受配置目录、provider、model 和扩展路径；密钥请保存在本机 Pi 私有配置中');
+  if (Object.keys(input).some(key => !['provider', 'model', 'extensions'].includes(key))) {
+    throw new APIError(400, 'INVALID_REQUEST', '只接受 provider、model 和扩展路径；目录由 adaptor 管理，密钥请保存在 Pi 私有配置中');
   }
-  const directory = input.pi_config_dir ?? defaultDirectory;
-  if (typeof directory !== 'string' || !isAbsolute(directory)) throw new APIError(400, 'INVALID_REQUEST', 'Pi 配置目录必须是绝对路径');
-  const settings: PiSettings = { pi_config_dir: directory };
+  const settings: PiSettings & ModelSelection = { pi_config_dir: defaultDirectory };
   if (input.provider !== undefined || input.model !== undefined) {
     if (typeof input.provider !== 'string' || !input.provider.trim() || typeof input.model !== 'string' || !input.model.trim()) {
       throw new APIError(400, 'INVALID_REQUEST', 'provider 和 model 需要同时填写');
@@ -68,29 +66,46 @@ export class Sessions {
     return record;
   }
 
+  private pathsMatch(record: SessionRecord) {
+    const directories = agentDirectories(this.config, record.agent_id);
+    const settings = JSON.parse(record.config_json) as PiSettings;
+    const ref = record.native_ref_json ? JSON.parse(record.native_ref_json) as NativeRef : null;
+    return record.cwd === directories.cwd && settings.pi_config_dir === directories.pi_config_dir &&
+      (!ref?.session_file || dirname(ref.session_file) === join(directories.sessions_dir, record.session_id));
+  }
+
   runtimeConfig(agentId: string) {
     this.requireAgent(agentId);
     const record = this.store.session(agentId);
-    const defaultDirectory = join(this.config.data_root ?? join(dirname(this.config.sqlite_path), 'runtime'), 'pi-config', agentId);
-    return { runtime: record ? { harness: record.harness, cwd: record.cwd, config: JSON.parse(record.config_json) } : null,
-      default_pi_config_dir: defaultDirectory };
+    const directories = agentDirectories(this.config, agentId);
+    const settings: Partial<PiSettings> = record ? JSON.parse(record.config_json) : {};
+    let selection: ModelSelection = {}; let configurationIssue: string | null = null;
+    try { selection = readModelSelection(directories.pi_config_dir); }
+    catch (error) { configurationIssue = errorMessage(error); }
+    return { runtime: { harness: 'pi' as const, config: { extensions: settings.extensions ?? [], ...selection } },
+      configuration_issue: configurationIssue, directories };
   }
 
   async configure(agentId: string, input: Record<string, unknown>) {
-    const { default_pi_config_dir: defaultDirectory } = this.runtimeConfig(agentId);
-    if (input.harness !== 'pi' || typeof input.cwd !== 'string' || !isAbsolute(input.cwd)) {
-      throw new APIError(400, 'INVALID_REQUEST', 'harness 必须为 pi，cwd 必须是绝对路径');
+    const { directories } = this.runtimeConfig(agentId);
+    if (input.harness !== 'pi' || Object.keys(input).some(key => !['harness', 'config'].includes(key))) {
+      throw new APIError(400, 'INVALID_REQUEST', '只接受 harness=pi 和 config；目录由 adaptor 管理');
     }
-    try { if (!statSync(input.cwd).isDirectory()) throw new Error(); }
-    catch { throw new APIError(400, 'INVALID_REQUEST', '工作目录不存在'); }
-    const settings = runtimeSettings(input.config ?? {}, defaultDirectory);
-    if (this.store.session(agentId)) {
-      if (this.requireAgent(agentId).enabled) throw new APIError(409, 'AGENT_ENABLED', '修改已有运行配置前请先停用 Agent');
-      await this.reconcile(agentId);
-      if (this.requireAgent(agentId).enabled) throw new APIError(409, 'AGENT_ENABLED', 'Agent 已重新启用，请先停用');
+    const settings = runtimeSettings(input.config ?? {}, directories.pi_config_dir);
+    const existing = this.store.session(agentId);
+    if (existing) {
+      if (!this.pathsMatch(existing)) throw new APIError(409, 'AGENT_DIRECTORY_MISMATCH', 'Pi 目录与 agent_root 不一致，请停服并迁移现有目录和数据库路径');
+      const editable = () => !this.requireAgent(agentId).enabled || this.runtimes.get(agentId)?.status === 'unconfigured';
+      if (!editable()) throw new APIError(409, 'AGENT_ENABLED', '修改运行中的配置前请先停用 Agent');
+      if (!this.requireAgent(agentId).enabled) await this.reconcile(agentId);
+      if (!editable()) throw new APIError(409, 'AGENT_ENABLED', 'Agent 已重新启用，请先停用');
     }
-    this.store.configure(agentId, input.cwd, settings);
-    void this.reconcile(agentId);
+    prepareAgentDirectories(this.config, agentId);
+    const { provider, model, ...storedSettings } = settings;
+    try { writeModelSelection(directories.pi_config_dir, { provider, model }); }
+    catch (error) { throw new APIError(400, 'INVALID_CONFIG', error instanceof ConfigurationError ? error.message : '无法保存 pi-config/settings.json，请检查目录权限'); }
+    this.store.configure(agentId, directories.cwd, storedSettings);
+    await this.reconcile(agentId);
     return this.view(agentId);
   }
 
@@ -137,6 +152,7 @@ export class Sessions {
     this.events.set(record.session_id, events);
   }
   private async recover(runtime: Runtime, reason: string) {
+    if (!this.pathsMatch(runtime.record)) return;
     const rows = this.store.recoverable(runtime.record.agent_id);
     if (!rows.length) return;
     let persisted = new Set<string>();
@@ -144,10 +160,11 @@ export class Sessions {
     for (const row of rows) this.store.recovery(row.id, persisted.has(formatInput(row)), reason);
   }
   private async stop(runtime: Runtime) {
+    const unconfigured = runtime.status === 'unconfigured';
     runtime.ready = false; runtime.status = 'stopping';
     try { await runtime.session.close(); }
     finally {
-      await this.recover(runtime, 'Pi 实例已关闭，未能确认输入已写入历史；请核对后处理');
+      if (!unconfigured) await this.recover(runtime, 'Pi 实例已关闭，未能确认输入已写入历史；请核对后处理');
       runtime.status = 'disabled';
     }
   }
@@ -162,8 +179,11 @@ export class Sessions {
       if (this.closed || !this.store.agent(agentId)?.enabled || !record) return;
       const ref: NativeRef = record.native_ref_json ? JSON.parse(record.native_ref_json) : { session_id: randomUUID(), session_file: null };
       this.store.nativeRef(record.session_id, ref);
-      const session = this.factory({ cwd: record.cwd, settings: JSON.parse(record.config_json), nativeRef: ref,
-        cliPath: this.config.pi_cli_path!, sessionDir: join(this.config.data_root ?? join(dirname(this.config.sqlite_path), 'runtime'), record.session_id),
+      const directories = agentDirectories(this.config, agentId);
+      const settings = JSON.parse(record.config_json) as PiSettings;
+      const sessionDir = join(directories.sessions_dir, record.session_id);
+      const session = this.factory({ cwd: record.cwd, settings, nativeRef: ref,
+        cliPath: this.config.pi_cli_path!, sessionDir,
         allowCreate: !this.store.hasHistory(agentId) });
       const runtime: Runtime = { session, record, ready: false, status: 'starting', error: null };
       this.runtimes.set(agentId, runtime);
@@ -180,6 +200,9 @@ export class Sessions {
         }
       });
       try {
+        if (!this.pathsMatch(record)) {
+          throw new Error('Pi 目录与 agent_root 不一致，请停服并迁移现有目录和数据库路径');
+        }
         const state = await session.open();
         this.store.nativeRef(record.session_id, state.nativeRef);
         await this.recover(runtime, '上次输入结果不确定，未在 Pi 历史中找到完整输入；请核对后处理');
@@ -189,9 +212,11 @@ export class Sessions {
         this.onReady(agentId);
       } catch (error) {
         await session.close().catch(() => {});
-        await this.recover(runtime, 'Pi 会话启动失败，原输入保留待恢复');
-        runtime.ready = false; runtime.status = 'error'; runtime.error = errorMessage(error);
-        this.recordEvent(record, { type: 'error', text: runtime.error });
+        const unconfigured = error instanceof ConfigurationError;
+        if (!unconfigured) await this.recover(runtime, 'Pi 会话启动失败，原输入保留待恢复');
+        runtime.ready = false; runtime.state = undefined;
+        runtime.status = unconfigured ? 'unconfigured' : 'error'; runtime.error = errorMessage(error);
+        if (!unconfigured) this.recordEvent(record, { type: 'error', text: runtime.error });
       }
     }).catch(error => {
       const runtime = this.runtimes.get(agentId);

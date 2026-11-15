@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface Config {
@@ -8,13 +8,13 @@ export interface Config {
   trigger_ws_url: string;
   adaptor_id: string;
   sqlite_path: string;
-  data_root?: string;
+  agent_root: string;
   pi_cli_path?: string;
 }
 
 export function loadConfig(path: string): Config {
   const config = JSON.parse(readFileSync(path, 'utf8')) as Config;
-  for (const key of ['address', 'im_base_url', 'trigger_ws_url', 'adaptor_id', 'sqlite_path'] as const) {
+  for (const key of ['address', 'im_base_url', 'trigger_ws_url', 'adaptor_id', 'sqlite_path', 'agent_root'] as const) {
     if (typeof config[key] !== 'string' || !config[key]) throw new Error(`配置缺少 ${key}`);
   }
   const address = new URL(`http://${config.address}`);
@@ -25,10 +25,10 @@ export function loadConfig(path: string): Config {
       !['ws:', 'wss:'].includes(new URL(config.trigger_ws_url).protocol)) throw new Error('服务地址协议无效');
   config.im_base_url = config.im_base_url.replace(/\/$/, '');
   config.sqlite_path = resolve(dirname(path), config.sqlite_path);
-  for (const key of ['data_root', 'pi_cli_path'] as const) {
-    if (config[key] !== undefined && (typeof config[key] !== 'string' || !config[key])) throw new Error(`配置 ${key} 无效`);
-  }
-  config.data_root = resolve(dirname(path), config.data_root ?? 'runtime');
+  if (!isAbsolute(config.agent_root)) throw new Error('agent_root 必须是绝对路径');
+  if ('data_root' in config) throw new Error('data_root 已由 agent_root 替代，请停服并迁移现有 Agent 目录和数据库路径');
+  config.agent_root = resolve(config.agent_root);
+  if (config.pi_cli_path !== undefined && (typeof config.pi_cli_path !== 'string' || !config.pi_cli_path)) throw new Error('配置 pi_cli_path 无效');
   config.pi_cli_path = config.pi_cli_path ? resolve(dirname(path), config.pi_cli_path) :
     fileURLToPath(new URL('../../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url));
   return config;

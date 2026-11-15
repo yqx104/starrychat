@@ -262,7 +262,8 @@ export class ReadOnlyAuthStorage implements CredentialStore {
 		const credential = this.load()[providerId];
 		options?.signal?.throwIfAborted();
 		if (!credential) return undefined;
-		if (credential.type !== "api_key" || !credential.key || isCommandConfigValue(credential.key)) {
+		if (credential.type !== "api_key" || !credential.key ||
+			(isCommandConfigValue(credential.key) && process.env.PI_ADAPTOR_CONFIG_ONLY !== "1")) {
 			return structuredClone(credential);
 		}
 		return { ...credential, key: resolveConfigValue(credential.key, credential.env) };
