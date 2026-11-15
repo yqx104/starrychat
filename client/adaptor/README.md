@@ -74,13 +74,19 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 
 首次成功接入账号时，adaptor 在 `<agent_root>/<agent_id>/` 下自动创建 `workspace/`、`pi-config/`、`sessions/` 三个目录；创建失败时不会保存本机 Agent 记录。工作目录、Pi 私有配置目录和会话历史目录在“运行配置”页面只读展示，由后端统一计算。只支持 `harness=pi`。Provider、Model 必须同时填写，保存到该 Agent 的 `pi-config/settings.json` 中的 `defaultProvider`、`defaultModel`；清空两项后回到待配置。SQLite 只保留目录、扩展路径和会话绑定，不再另存模型选择。
 
-模型定义和自定义接口放在该 Agent 的 `pi-config/models.json`，API Key／OAuth 认证放在 `auth.json`（也支持 `models.json` 中的直接 API Key），密钥不通过 adaptor 配置 API 传递。Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AGENT_DIR` 和 `PI_ADAPTOR_CONFIG_ONLY=1` 使用实例私有配置；不读取宿主机的模型密钥、云认证环境变量或用户目录中的云认证链。配置值不执行 `!command`，环境变量引用仅能使用私有凭据内显式保存的 `env`。工作目录 `.pi/settings.json`、会话中的旧模型和模型目录缓存都不能替代私有模型选择或认证。普通 Pi CLI 不启用此模式时维持原行为。
+运行配置页面可填写 Provider、Model、接口地址（Base URL）和 API Key。Provider 和 Model 提供内置候选，也支持手填；内置模型自动确定接口类型，自定义模型需要选择 Chat Completions、Responses、Anthropic Messages 或 Google Generative AI。内置模型接口地址留空使用默认值；自定义模型需要填写地址和协议。Base URL 不包含具体请求路径、查询参数或 URL 认证信息。已知内置模型保留 Pi 的能力和兼容参数；已有自定义模型的其他参数也保留。
+
+模型定义和接口放在该 Agent 的 `pi-config/models.json`，API Key／OAuth 认证放在 `auth.json`。页面提交的 API Key 按字面值保存，留空保持已有 Key；勾选清除才删除，切换 Provider 不复制旧 Key。保存所选 Provider 时，其旧 `models.json.apiKey` 收敛到 `auth.json`，清除时同时消除旧 Key 的兜底。OAuth 保持原状，只有显式输入新 API Key 才替换。GET 接口只返回 `has_api_key`／`has_oauth`，不回显密钥或认证 headers；密钥不写 SQLite、日志或浏览器持久存储。
+
+保存和启停按 Agent 串行执行，先校验全部文件再以 `0600` 临时文件逐个原子替换，目录为 `0700`；保留其他 Provider 和设置，失败回滚已写文件。`.config-save-pending` 标记尚未完成的保存；异常中断或回滚失败时 Pi 保持待配置，人工核对恢复文件后移除标记再保存。损坏文件不会被静默覆盖。“保存并检查”检查本地配置及 Pi 启动，不发送试探模型请求；远端认证和模型是否可用以实际请求结果为准。
+
+Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AGENT_DIR` 和 `PI_ADAPTOR_CONFIG_ONLY=1` 使用实例私有配置；不读取宿主机的模型密钥、云认证环境变量或用户目录中的云认证链。配置值不执行 `!command`，环境变量引用仅能使用私有凭据内显式保存的 `env`。工作目录 `.pi/settings.json`、会话中的旧模型和模型目录缓存都不能替代私有模型选择或认证。普通 Pi CLI 不启用此模式时维持原行为。
 
 缺少模型选择、所选模型不可用、认证缺失或配置 JSON 无法读取时显示“待配置”；检查过程中创建的 RPC 会被关闭，不保留可派发实例。Trigger 连接、收件落盘和 ACK 继续工作，输入保留为 `pending`，配置完成前不提交给 Pi。IM 登录与模型认证互相独立。
 
 每个配置完整且启用的 Agent 常驻一个 Pi 主会话及一个 RPC 进程。来自不同单聊、群聊的输入汇入该主会话，并保留消息、发送者、来源和引用信息。统一的“启用／停用 Agent”控制 Trigger 连接和 Pi 进程；“中止当前执行”只中止工作。网络重连和重新认证不会更换主会话；Pi 故障不影响收件，Trigger 断线不停止 Pi。浏览器关闭不影响后台运行。
 
-运行中的实例修改配置需要先停用 Agent，保存后在下次启用时生效。“待配置”状态可在 Agent 启用时直接编辑；补齐私有认证文件后点“保存并检查”，检查成功才启动并继续派发积压输入。会话绑定保持不变；修改模型或扩展配置会保留原有历史。异常实例关闭后保留错误状态，由用户停用／重新启用重试，不自动循环重启。每个实例每 10 秒探测一次，单次 RPC 超时为原客户端的 30 秒；关闭先给 abort 最多 3 秒，再使用原客户端的 SIGTERM／SIGKILL 清理流程。
+运行中的实例修改配置需要先停用 Agent，保存后在下次启用时生效。“待配置”状态可在 Agent 启用时直接编辑；在运行配置填写模型、接口和认证后点“保存并检查”，检查成功才启动并继续派发积压输入。会话绑定保持不变；修改模型或扩展配置会保留原有历史。异常实例关闭后保留错误状态，由用户停用／重新启用重试，不自动循环重启。每个实例每 10 秒探测一次，单次 RPC 超时为原客户端的 30 秒；关闭先给 abort 最多 3 秒，再使用原客户端的 SIGTERM／SIGKILL 清理流程。
 
 目录布局如下；停用、重启和重新认证都会复用同一 Agent 的目录，文件不会被清空。工作目录决定 Pi 的初始执行位置，不提供文件访问隔离。
 
@@ -118,8 +124,8 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 | `PATCH /agents/{id}` | `{enabled:boolean}`；返回 `{agent}` |
 | `POST /agents/{id}/reauthenticate` | `{username,password}`；必须是同一 IM Agent，返回 `{agent}` |
 | `GET /agents/{id}/inbox` | 可选 `before_id`、`limit`（默认 50，最大 100）；返回 `{messages,has_more}`，按本地 ID 降序 |
-| `GET /agents/{id}/runtime` | 返回 `{runtime,configuration_issue,directories:{cwd,pi_config_dir,sessions_dir}}`；始终返回 Pi 配置对象，模型选择来自私有文件；`sessions_dir` 是该 Agent 的历史根目录 |
-| `PATCH /agents/{id}/runtime` | 保存 `{harness:"pi",config:{provider?,model?,extensions?}}`；模型选择写入私有文件；拒绝客户端指定目录；运行中先停用，待配置可直接保存并检查 |
+| `GET /agents/{id}/runtime` | 返回 `{runtime,model_options,configuration_issue,directories:{cwd,pi_config_dir,sessions_dir}}`；始终返回 Pi 配置对象，模型选择来自私有文件；`model_options` 包含模型候选、接口和认证是否已保存，不含密钥；`sessions_dir` 是该 Agent 的历史根目录 |
+| `PATCH /agents/{id}/runtime` | 保存 `{harness:"pi",config:{provider?,model?,base_url?,api?,api_key?,clear_api_key?,extensions?}}`；模型、接口和密钥写入私有文件；`api_key` 留空保留、`clear_api_key=true` 清除，两者不能同时使用；拒绝客户端指定目录；运行中先停用，待配置可直接保存并检查 |
 | `GET /agents/{id}/main-session` | 返回主会话引用、状态、模型名称、队列数量、错误和派发阻塞状态 |
 | `POST /sessions/{id}/abort` | JSON `{}`；中止当前执行，保留进程与 Agent 启用状态 |
 | `GET /sessions/{id}/events` | 可选 `after`、`epoch`；返回 `{epoch,events,truncated}`，以进程 epoch 识别后端重启 |

@@ -14,6 +14,6 @@
 - `persistedInputs()` 使用 Pi 原生历史解析器读取已经写入文件的 user 文本，仅供 adaptor 做输入核对，不重建模型上下文。扩展改写的内容可能无法关联，需要人工核对。
 - `close()` 停止检查，给 abort 最多 3 秒，再调用原客户端 stop（SIGTERM，约 1 秒后可 SIGKILL）。历史与绑定由 adaptor 保留。
 
-`readModelSelection()`／`writeModelSelection()` 供配置页面读取或原子保存模型选择，保留 `settings.json` 的其他设置，格式错误时拒绝覆盖。`PiSettings` 只携带私有目录和扩展路径，不重复携带 provider/model。
+`readModelSelection()`／`writeModelSelection()` 读取或保存模型选择；`readModelOptions()` 只提供可公开的模型候选、接口与认证存在状态，`saveModelConfiguration()` 保存表单中的选择、接口和 API Key。API Key 按字面值转义后只保存在 `auth.json`，不创建宿主环境引用；留空保留、显式清除删除旧认证及 `models.json` 的旧 Key。保留其他 Provider 和现有模型参数；配置损坏时拒绝覆盖，多文件写入失败回滚，未完成保存标记会阻止 Pi 启动。`PiSettings` 只携带私有目录和扩展路径，不重复携带 provider/model。
 
 `npm test --workspace=@starrychat/pi-adaptor` 使用真实 RpcClient 和确定性的 JSONL 子进程测试生命周期、环境变量隔离与异常边界。真实 Pi、工具、本地模型协议和两个实例独立认证的链路验证在 adaptor 后端测试中。外部模型调用不包含在自动化测试中。

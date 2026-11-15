@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join } from 'node:path';
 import { APIError } from '../model/errors.ts';
-import { ConfigurationError, errorMessage, readModelSelection, writeModelSelection, type ModelSelection, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
+import { ConfigurationError, errorMessage, readModelSelection, readModelOptions, saveModelConfiguration, type ModelConfiguration, type ModelSelection, type ProviderOption, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
 import type { Config } from '../config/config.ts';
 import { Store } from '../repository/store.ts';
 import type { SessionRecord } from '../model/types.ts';
@@ -15,18 +15,31 @@ export interface Runtime {
 }
 export interface DisplayEvent extends SessionEvent { id: number; at: number }
 
-function runtimeSettings(value: unknown, defaultDirectory: string): PiSettings & ModelSelection {
+function runtimeSettings(value: unknown, defaultDirectory: string): PiSettings & ModelConfiguration {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new APIError(400, 'INVALID_REQUEST', 'config 必须为对象');
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['provider', 'model', 'extensions'].includes(key))) {
-    throw new APIError(400, 'INVALID_REQUEST', '只接受 provider、model 和扩展路径；目录由 adaptor 管理，密钥请保存在 Pi 私有配置中');
+  if (Object.keys(input).some(key => !['provider', 'model', 'base_url', 'api', 'api_key', 'clear_api_key', 'extensions'].includes(key))) {
+    throw new APIError(400, 'INVALID_REQUEST', '只接受模型、接口、API Key 和扩展配置；目录由 adaptor 管理');
   }
-  const settings: PiSettings & ModelSelection = { pi_config_dir: defaultDirectory };
+  const settings: PiSettings & ModelConfiguration = { pi_config_dir: defaultDirectory };
   if (input.provider !== undefined || input.model !== undefined) {
     if (typeof input.provider !== 'string' || !input.provider.trim() || typeof input.model !== 'string' || !input.model.trim()) {
       throw new APIError(400, 'INVALID_REQUEST', 'provider 和 model 需要同时填写');
     }
     settings.provider = input.provider.trim(); settings.model = input.model.trim();
+  }
+  for (const key of ['base_url', 'api', 'api_key'] as const) {
+    if (input[key] !== undefined) {
+      if (typeof input[key] !== 'string') throw new APIError(400, 'INVALID_REQUEST', '接口和密钥配置必须为字符串');
+      settings[key] = input[key].trim();
+    }
+  }
+  if (input.clear_api_key !== undefined) {
+    if (typeof input.clear_api_key !== 'boolean') throw new APIError(400, 'INVALID_REQUEST', 'clear_api_key 必须为布尔值');
+    settings.clear_api_key = input.clear_api_key;
+  }
+  if (!settings.provider && (settings.base_url || settings.api || settings.api_key || settings.clear_api_key)) {
+    throw new APIError(400, 'INVALID_REQUEST', '请先填写 Provider 和 Model');
   }
   if (input.extensions !== undefined) {
     if (!Array.isArray(input.extensions) || input.extensions.length > 20 || input.extensions.some(path => typeof path !== 'string' || !isAbsolute(path))) {
@@ -79,14 +92,28 @@ export class Sessions {
     const record = this.store.session(agentId);
     const directories = agentDirectories(this.config, agentId);
     const settings: Partial<PiSettings> = record ? JSON.parse(record.config_json) : {};
-    let selection: ModelSelection = {}; let configurationIssue: string | null = null;
-    try { selection = readModelSelection(directories.pi_config_dir); }
+    let selection: ModelSelection = {}; let modelOptions: ProviderOption[] = []; let configurationIssue: string | null = null;
+    try { selection = readModelSelection(directories.pi_config_dir); modelOptions = readModelOptions(directories.pi_config_dir); }
     catch (error) { configurationIssue = errorMessage(error); }
     return { runtime: { harness: 'pi' as const, config: { extensions: settings.extensions ?? [], ...selection } },
-      configuration_issue: configurationIssue, directories };
+      model_options: modelOptions, configuration_issue: configurationIssue, directories };
   }
 
-  async configure(agentId: string, input: Record<string, unknown>) {
+  private serialize<T>(agentId: string, action: () => Promise<T>): Promise<T> {
+    const result = (this.operations.get(agentId) ?? Promise.resolve()).then(action);
+    const tail = result.then(() => {}, () => {}).finally(() => {
+      if (this.operations.get(agentId) === tail) this.operations.delete(agentId);
+    });
+    this.operations.set(agentId, tail);
+    return result;
+  }
+
+  configure(agentId: string, input: Record<string, unknown>) {
+    return this.serialize(agentId, () => this.configureNow(agentId, input));
+  }
+
+  private async configureNow(agentId: string, input: Record<string, unknown>) {
+    if (this.closed) throw new APIError(409, 'SERVICE_STOPPING', '服务正在停止，请稍后重试');
     const { directories } = this.runtimeConfig(agentId);
     if (input.harness !== 'pi' || Object.keys(input).some(key => !['harness', 'config'].includes(key))) {
       throw new APIError(400, 'INVALID_REQUEST', '只接受 harness=pi 和 config；目录由 adaptor 管理');
@@ -97,15 +124,15 @@ export class Sessions {
       if (!this.pathsMatch(existing)) throw new APIError(409, 'AGENT_DIRECTORY_MISMATCH', 'Pi 目录与 agent_root 不一致，请停服并迁移现有目录和数据库路径');
       const editable = () => !this.requireAgent(agentId).enabled || this.runtimes.get(agentId)?.status === 'unconfigured';
       if (!editable()) throw new APIError(409, 'AGENT_ENABLED', '修改运行中的配置前请先停用 Agent');
-      if (!this.requireAgent(agentId).enabled) await this.reconcile(agentId);
+      if (!this.requireAgent(agentId).enabled) await this.reconcileNow(agentId);
       if (!editable()) throw new APIError(409, 'AGENT_ENABLED', 'Agent 已重新启用，请先停用');
     }
     prepareAgentDirectories(this.config, agentId);
-    const { provider, model, ...storedSettings } = settings;
-    try { writeModelSelection(directories.pi_config_dir, { provider, model }); }
-    catch (error) { throw new APIError(400, 'INVALID_CONFIG', error instanceof ConfigurationError ? error.message : '无法保存 pi-config/settings.json，请检查目录权限'); }
-    this.store.configure(agentId, directories.cwd, storedSettings);
-    await this.reconcile(agentId);
+    const { pi_config_dir, extensions, ...modelConfig } = settings;
+    try { saveModelConfiguration(directories.pi_config_dir, modelConfig); }
+    catch (error) { throw new APIError(400, 'INVALID_CONFIG', error instanceof ConfigurationError ? error.message : '无法保存 pi-config 配置，请检查目录权限'); }
+    this.store.configure(agentId, directories.cwd, { pi_config_dir, extensions });
+    await this.reconcileNow(agentId);
     return this.view(agentId);
   }
 
@@ -169,8 +196,10 @@ export class Sessions {
     }
   }
   reconcile(agentId: string): Promise<void> {
-    const previous = this.operations.get(agentId) ?? Promise.resolve();
-    const operation = previous.then(async () => {
+    return this.serialize(agentId, () => this.reconcileNow(agentId));
+  }
+  private async reconcileNow(agentId: string): Promise<void> {
+    try {
       const existing = this.runtimes.get(agentId);
       const enabled = !this.closed && !!this.store.agent(agentId)?.enabled;
       if (existing?.ready && enabled) return;
@@ -218,12 +247,10 @@ export class Sessions {
         runtime.status = unconfigured ? 'unconfigured' : 'error'; runtime.error = errorMessage(error);
         if (!unconfigured) this.recordEvent(record, { type: 'error', text: runtime.error });
       }
-    }).catch(error => {
+    } catch (error) {
       const runtime = this.runtimes.get(agentId);
       if (runtime) { runtime.ready = false; runtime.status = 'error'; runtime.error = errorMessage(error); }
-    }).finally(() => { if (this.operations.get(agentId) === operation) this.operations.delete(agentId); });
-    this.operations.set(agentId, operation);
-    return operation;
+    }
   }
   fail(agentId: string, runtime: Runtime, reason: string) {
     if (this.runtimes.get(agentId) !== runtime || runtime.status === 'error') return;

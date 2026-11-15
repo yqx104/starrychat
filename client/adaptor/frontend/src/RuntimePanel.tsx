@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { api, type Agent, type ExecutionEvent, type InboxItem, type MainSession, type RuntimeConfig, type RuntimeDirectories } from './api';
+import { useEffect, useState } from 'react';
+import { api, type Agent, type ExecutionEvent, type InboxItem, type MainSession } from './api';
 import './runtime.css';
+import { RuntimeConfigDialog } from './RuntimeConfigDialog';
 
 const sessionLabels: Record<string, string> = {
   unconfigured: '待配置', starting: '启动中', idle: '空闲', busy: '执行中', compacting: '压缩上下文',
@@ -27,10 +28,6 @@ export function RuntimePanel({ agent, messages }: { agent: Agent; messages: Inbo
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
-  const [directories, setDirectories] = useState<RuntimeDirectories>();
-  const [provider, setProvider] = useState('');
-  const [model, setModel] = useState('');
-  const [extensions, setExtensions] = useState('');
   const [busy, setBusy] = useState(false);
   const [recovery, setRecovery] = useState<{ item: InboxItem; action: 'retry' | 'accepted' } | null>(null);
 
@@ -61,27 +58,6 @@ export function RuntimePanel({ agent, messages }: { agent: Agent; messages: Inbo
     return () => { controller.abort(); clearTimeout(timer); };
   }, [agent.agent_id]);
 
-  async function openConfig() {
-    setBusy(true); setError('');
-    try {
-      const data = await api<{ runtime: RuntimeConfig; directories: RuntimeDirectories; configuration_issue: string | null }>(`/agents/${agent.agent_id}/runtime`);
-      setDirectories(data.directories);
-      setProvider(data.runtime?.config.provider ?? ''); setModel(data.runtime?.config.model ?? '');
-      setExtensions(data.runtime?.config.extensions?.join('\n') ?? ''); setEditing(true);
-      if (data.configuration_issue) setError(data.configuration_issue);
-    } catch (error) { setError(error instanceof Error ? error.message : '配置读取失败'); }
-    finally { setBusy(false); }
-  }
-  async function save(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try {
-      const config = { ...(provider || model ? { provider, model } : {}),
-        extensions: extensions.split('\n').map(value => value.trim()).filter(Boolean) };
-      const state = await api<MainSession>(`/agents/${agent.agent_id}/runtime`, { method: 'PATCH', body: JSON.stringify({ harness: 'pi', config }) });
-      setView(state); setEditing(false);
-    } catch (error) { setError(error instanceof Error ? error.message : '配置保存失败'); }
-    finally { setBusy(false); }
-  }
   async function abort() {
     if (!view?.session) return;
     setBusy(true); setError('');
@@ -106,11 +82,11 @@ export function RuntimePanel({ agent, messages }: { agent: Agent; messages: Inbo
   return <section className="runtime-panel" aria-label="Pi 主会话">
     <div className="runtime-heading"><div><h2>Pi 主会话 <span className={`badge ${view?.status === 'error' ? 'conflict' : ''}`}>{sessionLabels[view?.status ?? agent.session_status] ?? '读取中'}</span></h2>
       <p>{view?.model ? `${view.model.provider} / ${view.model.id}` : '模型与认证仅使用此 Agent 的 pi-config'} · 队列 {view?.pending ?? 0}</p></div>
-      <div className="actions"><button disabled={busy || (!!view?.session && agent.enabled && !needsConfig)} onClick={openConfig}>运行配置</button>
+      <div className="actions"><button disabled={busy || (!!view?.session && agent.enabled && !needsConfig)} onClick={() => { setError(''); setEditing(true); }}>运行配置</button>
         <button disabled={busy || !['idle', 'busy', 'compacting'].includes(view?.status ?? '')} onClick={abort}>中止当前执行</button></div></div>
     {view?.session && <div className="session-reference"><span>主会话 {view.session.session_id}</span><code>{view.session.cwd}</code>
       <code>{view.session.native_ref?.session_file ?? '首次输入持久化后生成会话文件'}</code></div>}
-    {needsConfig && <p className="runtime-hint">配置完成前消息保留在收件箱，暂不执行。补齐 pi-config 后，打开运行配置并保存检查。</p>}
+    {needsConfig && <p className="runtime-hint">配置完成前消息保留在收件箱，暂不执行。打开运行配置填写模型、接口和 API Key，然后保存检查。</p>}
     {agent.enabled && view?.session && !needsConfig && <p className="runtime-hint">修改运行配置前请先停用 Agent；重新启用会恢复当前会话。</p>}
     {(error || view?.last_error) && <div role="alert" className="notice">{error || view?.last_error}</div>}
     {view?.blocked && <div className="notice">输入派发已暂停。请先停用 Agent，核对会话历史后处理拒绝或待恢复记录，再重新启用。</div>}
@@ -132,15 +108,7 @@ export function RuntimePanel({ agent, messages }: { agent: Agent; messages: Inbo
       <div className="dialog-actions"><button disabled={busy} onClick={() => setRecovery(null)}>取消</button>
         <button className="primary" disabled={busy || agent.enabled} onClick={recover}>{busy ? '处理中…' : recovery.action === 'retry' ? '已核对，重新投递' : '已核对，标记已接收'}</button></div>
     </section></div>}
-    {editing && <div className="overlay"><section role="dialog" aria-modal="true" aria-labelledby="runtime-title" className="dialog runtime-dialog"><h2 id="runtime-title">Pi 运行配置</h2>
-      <p>模型选择保存到此 Agent 的 pi-config/settings.json；认证放在 auth.json 或 models.json 中。缺少配置时保持待配置，不读取宿主机的模型密钥。</p><form onSubmit={save}>
-        <label htmlFor="runtime-cwd">工作目录</label><textarea id="runtime-cwd" rows={2} readOnly value={directories?.cwd ?? ''} />
-        <label htmlFor="runtime-directory">Pi 私有配置目录</label><textarea id="runtime-directory" rows={2} readOnly value={directories?.pi_config_dir ?? ''} />
-        <label htmlFor="runtime-sessions">会话历史目录</label><textarea id="runtime-sessions" rows={2} readOnly value={directories?.sessions_dir ?? ''} />
-        <div className="model-fields"><div><label htmlFor="runtime-provider">Provider</label><input id="runtime-provider" autoFocus value={provider} onChange={event => setProvider(event.target.value)} /></div>
-          <div><label htmlFor="runtime-model">Model</label><input id="runtime-model" value={model} onChange={event => setModel(event.target.value)} /></div></div>
-        <label htmlFor="runtime-extensions">扩展绝对路径（可选，每行一个）</label><textarea id="runtime-extensions" rows={3} value={extensions} onChange={event => setExtensions(event.target.value)} />
-        {error && <div role="alert" className="form-error">{error}</div>}<div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setEditing(false)}>取消</button><button className="primary" disabled={busy}>{busy ? '检查中…' : '保存并检查'}</button></div>
-      </form></section></div>}
+    {editing && <RuntimeConfigDialog key={agent.agent_id} agentId={agent.agent_id} onClose={() => setEditing(false)}
+      onSaved={state => { setView(state); setEditing(false); }} />}
   </section>;
 }

@@ -11,6 +11,13 @@ export interface InboxItem {
 export interface Config { adaptor_id: string; im_base_url: string; trigger_ws_url: string }
 export interface RuntimeConfig { harness: 'pi'; config: { provider?: string; model?: string; extensions?: string[] } }
 export interface RuntimeDirectories { cwd: string; pi_config_dir: string; sessions_dir: string }
+export interface ModelOption { id: string; name: string; api: string; base_url: string; builtin: boolean }
+export interface ProviderOption {
+  id: string; base_url: string; api: string; has_api_key: boolean; has_oauth: boolean; models: ModelOption[];
+}
+export interface RuntimeDetails {
+  runtime: RuntimeConfig; directories: RuntimeDirectories; configuration_issue: string | null; model_options: ProviderOption[];
+}
 export interface MainSession {
   status: string; blocked?: string | null; last_error: string | null; pending?: number;
   model?: { provider: string; id: string } | null;
