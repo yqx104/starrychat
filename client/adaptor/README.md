@@ -76,6 +76,8 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 
 运行配置页面可填写 Provider、Model、接口地址（Base URL）和 API Key。Provider 和 Model 提供内置候选，也支持手填；内置模型自动确定接口类型，自定义模型需要选择 Chat Completions、Responses、Anthropic Messages 或 Google Generative AI。内置模型接口地址留空使用默认值；自定义模型需要填写地址和协议。Base URL 不包含具体请求路径、查询参数或 URL 认证信息。已知内置模型保留 Pi 的能力和兼容参数；已有自定义模型的其他参数也保留。
 
+系统提示词只支持“Pi 默认”和“替换”。替换模式将非空正文原样保存到该 Agent 的 `pi-config/SYSTEM.md`（UTF-8 最多 64 KiB，权限 `0600`）；切回默认会移除该文件。重新打开表单会回显当前模式和正文。替换沿用 Pi 原生语义：替换默认提示词主体，项目指令、Skills、工作目录信息仍会加入，工具能力不变。adaptor 的 Pi 实例忽略工作目录 `.pi/SYSTEM.md` 和所有 `APPEND_SYSTEM.md`，不提供追加模式。配置仅写私有文件，不保存到 SQLite；运行中需要先停用再修改，下次启用加载新提示词并恢复原会话历史。API 单独提交提示词时保留模型选择；显式提交空字符串的 Provider 和 Model 则清除选择，认证仍保留。
+
 模型定义和接口放在该 Agent 的 `pi-config/models.json`，API Key／OAuth 认证放在 `auth.json`。页面提交的 API Key 按字面值保存，留空保持已有 Key；勾选清除才删除，切换 Provider 不复制旧 Key。保存所选 Provider 时，其旧 `models.json.apiKey` 收敛到 `auth.json`，清除时同时消除旧 Key 的兜底。OAuth 保持原状，只有显式输入新 API Key 才替换。GET 接口只返回 `has_api_key`／`has_oauth`，不回显密钥或认证 headers；密钥不写 SQLite、日志或浏览器持久存储。
 
 保存和启停按 Agent 串行执行，先校验全部文件再以 `0600` 临时文件逐个原子替换，目录为 `0700`；保留其他 Provider 和设置，失败回滚已写文件。`.config-save-pending` 标记尚未完成的保存；异常中断或回滚失败时 Pi 保持待配置，人工核对恢复文件后移除标记再保存。损坏文件不会被静默覆盖。“保存并检查”检查本地配置及 Pi 启动，不发送试探模型请求；远端认证和模型是否可用以实际请求结果为准。
@@ -125,7 +127,7 @@ Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AG
 | `POST /agents/{id}/reauthenticate` | `{username,password}`；必须是同一 IM Agent，返回 `{agent}` |
 | `GET /agents/{id}/inbox` | 可选 `before_id`、`limit`（默认 50，最大 100）；返回 `{messages,has_more}`，按本地 ID 降序 |
 | `GET /agents/{id}/runtime` | 返回 `{runtime,model_options,configuration_issue,directories:{cwd,pi_config_dir,sessions_dir}}`；始终返回 Pi 配置对象，模型选择来自私有文件；`model_options` 包含模型候选、接口和认证是否已保存，不含密钥；`sessions_dir` 是该 Agent 的历史根目录 |
-| `PATCH /agents/{id}/runtime` | 保存 `{harness:"pi",config:{provider?,model?,base_url?,api?,api_key?,clear_api_key?,extensions?}}`；模型、接口和密钥写入私有文件；`api_key` 留空保留、`clear_api_key=true` 清除，两者不能同时使用；拒绝客户端指定目录；运行中先停用，待配置可直接保存并检查 |
+| `PATCH /agents/{id}/runtime` | 保存 `{harness:"pi",config:{provider?,model?,base_url?,api?,api_key?,clear_api_key?,system_prompt?,extensions?}}`；模型、接口、密钥和提示词写入私有文件；`system_prompt` 为 `{mode:"default",text:""}` 或 `{mode:"replace",text:"正文"}`，省略保留；仅提交提示词会保留模型、认证和扩展；`api_key` 留空保留、`clear_api_key=true` 清除，两者不能同时使用；拒绝客户端指定目录；运行中先停用，待配置可直接保存并检查 |
 | `GET /agents/{id}/main-session` | 返回主会话引用、状态、模型名称、队列数量、错误和派发阻塞状态 |
 | `POST /sessions/{id}/abort` | JSON `{}`；中止当前执行，保留进程与 Agent 启用状态 |
 | `GET /sessions/{id}/events` | 可选 `after`、`epoch`；返回 `{epoch,events,truncated}`，以进程 epoch 识别后端重启 |

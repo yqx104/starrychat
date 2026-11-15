@@ -16,4 +16,8 @@
 
 `readModelSelection()`／`writeModelSelection()` 读取或保存模型选择；`readModelOptions()` 只提供可公开的模型候选、接口与认证存在状态，`saveModelConfiguration()` 保存表单中的选择、接口和 API Key。API Key 按字面值转义后只保存在 `auth.json`，不创建宿主环境引用；留空保留、显式清除删除旧认证及 `models.json` 的旧 Key。保留其他 Provider 和现有模型参数；配置损坏时拒绝覆盖，多文件写入失败回滚，未完成保存标记会阻止 Pi 启动。`PiSettings` 只携带私有目录和扩展路径，不重复携带 provider/model。
 
-`npm test --workspace=@starrychat/pi-adaptor` 使用真实 RpcClient 和确定性的 JSONL 子进程测试生命周期、环境变量隔离与异常边界。真实 Pi、工具、本地模型协议和两个实例独立认证的链路验证在 adaptor 后端测试中。外部模型调用不包含在自动化测试中。
+`readSystemPrompt()` 读取本实例 `pi-config/SYSTEM.md`，不存在时返回 `{mode:"default",text:""}`，存在时返回 `{mode:"replace",text}`。`saveModelConfiguration()` 可接收 `system_prompt`：替换模式原样保存 UTF-8 正文（非空、最多 64 KiB，文件权限 `0600`），默认模式移除该文件；不传此字段则保留。仅保存提示词不会重写模型和认证文件，提示词写入／删除参与多文件保存回滚。
+
+私有配置模式只从本实例 `SYSTEM.md` 读取替换提示词，不加载工作目录 `.pi/SYSTEM.md`、任何 `APPEND_SYSTEM.md` 或 CLI 提示词参数。替换遵循 Pi 原生语义：替换默认提示词主体，项目指令、Skills 和工作目录信息仍会加入，工具能力不变；普通 Pi CLI 的发现规则不变。重新打开同一会话后使用最新配置，保留历史。
+
+`npm test --workspace=@starrychat/pi-adaptor` 使用真实 RpcClient 和确定性的 JSONL 子进程测试生命周期、环境变量隔离与异常边界。真实 Pi、工具、本地模型协议、两个实例独立认证和系统提示词的链路验证在 adaptor 后端测试中。外部模型调用不包含在自动化测试中。

@@ -9,7 +9,8 @@ export interface InboxItem {
   message: { content: string; message_id: string; channel_type: string; conversation_id: string; message_seq: number; sender_id: string };
 }
 export interface Config { adaptor_id: string; im_base_url: string; trigger_ws_url: string }
-export interface RuntimeConfig { harness: 'pi'; config: { provider?: string; model?: string; extensions?: string[] } }
+export interface SystemPromptConfiguration { mode: 'default' | 'replace'; text: string }
+export interface RuntimeConfig { harness: 'pi'; config: { provider?: string; model?: string; extensions?: string[]; system_prompt: SystemPromptConfiguration } }
 export interface RuntimeDirectories { cwd: string; pi_config_dir: string; sessions_dir: string }
 export interface ModelOption { id: string; name: string; api: string; base_url: string; builtin: boolean }
 export interface ProviderOption {

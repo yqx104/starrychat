@@ -686,13 +686,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
 
-		const systemPromptSource = this.systemPromptSource ?? this.discoverSystemPromptFile();
+		const privateConfigOnly = process.env.PI_ADAPTOR_CONFIG_ONLY === "1";
+		const systemPromptSource = privateConfigOnly
+			? this.discoverSystemPromptFile()
+			: (this.systemPromptSource ?? this.discoverSystemPromptFile());
 		const baseSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
 		this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
 		this.systemPromptSourcePath =
 			systemPromptSource && existsSync(systemPromptSource) ? resolvePath(systemPromptSource) : undefined;
 
-		let appendSources = this.appendSystemPromptSource;
+		let appendSources = privateConfigOnly ? [] : this.appendSystemPromptSource;
 		if (!appendSources) {
 			const discoveredAppendSystemPromptFile = this.discoverAppendSystemPromptFile();
 			appendSources = discoveredAppendSystemPromptFile ? [discoveredAppendSystemPromptFile] : [];
@@ -1244,7 +1247,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private discoverSystemPromptFile(): string | undefined {
 		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "SYSTEM.md");
-		if (this.settingsManager.isProjectTrusted() && existsSync(projectPath)) {
+		if (process.env.PI_ADAPTOR_CONFIG_ONLY !== "1" && this.settingsManager.isProjectTrusted() && existsSync(projectPath)) {
 			return projectPath;
 		}
 
@@ -1257,6 +1260,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	private discoverAppendSystemPromptFile(): string | undefined {
+		if (process.env.PI_ADAPTOR_CONFIG_ONLY === "1") return undefined;
 		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
 		if (this.settingsManager.isProjectTrusted() && existsSync(projectPath)) {
 			return projectPath;

@@ -6,8 +6,37 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 import { resolveConfigValue, resolveConfigValueUncached, isConfigValueConfigured } from "../src/core/resolve-config-value.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 
 afterEach(() => vi.unstubAllEnvs());
+
+test("private prompt modes use only agent SYSTEM.md and never append; normal CLI retains discovery", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-private-prompt-"));
+	try {
+		const agentDir = join(directory, "pi-config"); mkdirSync(agentDir);
+		mkdirSync(join(directory, ".pi"));
+		writeFileSync(join(agentDir, "SYSTEM.md"), "private replacement");
+		writeFileSync(join(agentDir, "APPEND_SYSTEM.md"), "private append");
+		writeFileSync(join(directory, ".pi", "SYSTEM.md"), "workspace replacement");
+		writeFileSync(join(directory, ".pi", "APPEND_SYSTEM.md"), "workspace append");
+		const settingsManager = SettingsManager.create(directory, agentDir, { projectTrusted: true });
+		vi.stubEnv("PI_ADAPTOR_CONFIG_ONLY", "1");
+		const loader = new DefaultResourceLoader({ cwd: directory, agentDir, settingsManager,
+			systemPrompt: "explicit replacement", appendSystemPrompt: "explicit append" });
+		await loader.reload();
+		expect(loader.getSystemPrompt()).toBe("private replacement");
+		expect(loader.getAppendSystemPrompt()).toEqual([]);
+		rmSync(join(agentDir, "SYSTEM.md"));
+		await loader.reload();
+		expect(loader.getSystemPrompt()).toBeUndefined();
+		expect(loader.getAppendSystemPrompt()).toEqual([]);
+		vi.stubEnv("PI_ADAPTOR_CONFIG_ONLY", "");
+		const normal = new DefaultResourceLoader({ cwd: directory, agentDir, settingsManager });
+		await normal.reload();
+		expect(normal.getSystemPrompt()).toBe("workspace replacement");
+		expect(normal.getAppendSystemPrompt()).toEqual(["workspace append"]);
+	} finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 test("private config mode rejects ambient keys/cloud profiles and accepts stored API keys and OAuth", async () => {
 	vi.stubEnv("PI_ADAPTOR_CONFIG_ONLY", "1");

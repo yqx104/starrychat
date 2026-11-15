@@ -4,6 +4,7 @@ import type { RpcClient } from '@earendil-works/pi-coding-agent';
 import { displayEvent } from './events.ts';
 import { ConfigurationError, InputError, errorMessage, type Input, type NativeRef, type OpenConfig, type Receipt, type Session, type SessionEvent, type SessionState } from './types.ts';
 import { isolatedEnvironment, readModelSelection, readPrivateConfig } from './config.ts';
+import { readSystemPrompt } from './prompt-config.ts';
 
 function header(path: string): { type: string; id: string } {
   const fd = openSync(path, 'r');
@@ -54,6 +55,7 @@ export class PiSession implements Session {
     if (!selection.provider || !selection.model) throw new ConfigurationError('请在运行配置中选择 Provider 和 Model（保存到 pi-config/settings.json）');
     readPrivateConfig(this.config.settings.pi_config_dir, 'auth.json');
     readPrivateConfig(this.config.settings.pi_config_dir, 'models.json');
+    readSystemPrompt(this.config.settings.pi_config_dir);
     if (!statSync(this.config.cliPath).isFile()) throw new Error('Pi RPC 入口不存在，请先构建 Pi');
     if (!statSync(this.config.cwd).isDirectory()) throw new Error('Pi 工作目录不存在');
     this.locate();

@@ -1,10 +1,12 @@
 import { getBuiltinModels, getBuiltinProviders, type BuiltinProvider } from '@earendil-works/pi-ai/providers/all';
 import { assertConfigComplete, readPrivateConfig, writePrivateConfigs, type ModelSelection } from './config.ts';
 import { ConfigurationError } from './types.ts';
+import { readSystemPrompt, validateSystemPrompt, type SystemPromptConfiguration } from './prompt-config.ts';
 
 type Json = Record<string, unknown>;
 export interface ModelConfiguration extends ModelSelection {
   base_url?: string; api?: string; api_key?: string; clear_api_key?: boolean;
+  system_prompt?: SystemPromptConfiguration;
 }
 export interface ModelOption { id: string; name: string; api: string; base_url: string; builtin: boolean }
 export interface ProviderOption {
@@ -76,12 +78,22 @@ export function readModelOptions(directory: string): ProviderOption[] {
 }
 
 export function saveModelConfiguration(directory: string, input: ModelConfiguration) {
+  const promptFiles: Record<string, string | null> = {};
+  if (input.system_prompt !== undefined) {
+    const prompt = validateSystemPrompt(input.system_prompt);
+    readSystemPrompt(directory);
+    promptFiles['SYSTEM.md'] = prompt.mode === 'replace' ? prompt.text : null;
+    // A prompt-only PATCH must leave model selection and credentials untouched.
+    if (!Object.keys(input).some(key => key !== 'system_prompt')) {
+      writePrivateConfigs(directory, promptFiles); return;
+    }
+  }
   const settings = readPrivateConfig(directory, 'settings.json');
   const { auth, models, providers } = load(directory);
   if (!input.provider || !input.model) {
     if (input.base_url || input.api || input.api_key || input.clear_api_key) throw new ConfigurationError('请先填写 Provider 和 Model');
     delete settings.defaultProvider; delete settings.defaultModel;
-    writePrivateConfigs(directory, { 'settings.json': settings }); return;
+    writePrivateConfigs(directory, { 'settings.json': settings, ...promptFiles }); return;
   }
   const id = input.provider; providerId(id);
   if (input.model.length > 256 || /[\x00-\x1f\x7f]/.test(input.model)) throw new ConfigurationError('Model ID 无效');
@@ -128,5 +140,5 @@ export function saveModelConfiguration(directory: string, input: ModelConfigurat
   if (hasOverrides) providers[id] = provider; else delete providers[id];
   models.providers = providers;
   settings.defaultProvider = id; settings.defaultModel = input.model;
-  writePrivateConfigs(directory, { 'auth.json': auth, 'models.json': models, 'settings.json': settings });
+  writePrivateConfigs(directory, { 'auth.json': auth, 'models.json': models, 'settings.json': settings, ...promptFiles });
 }

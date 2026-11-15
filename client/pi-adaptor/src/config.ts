@@ -37,7 +37,7 @@ export function readModelSelection(directory: string): ModelSelection {
 
 // Serialize callers per Agent. Each file is replaced atomically; an interrupted
 // group is marked so a subsequent process cannot start using partial settings.
-export function writePrivateConfigs(directory: string, values: Record<string, Record<string, unknown>>) {
+export function writePrivateConfigs(directory: string, values: Record<string, Record<string, unknown> | string | null>) {
   assertConfigComplete(directory);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   fs.chmodSync(directory, 0o700);
@@ -58,7 +58,9 @@ export function writePrivateConfigs(directory: string, values: Record<string, Re
   const changed: string[] = [];
   try {
     for (const [name, value] of Object.entries(values)) {
-      replace(name, JSON.stringify(value, null, 2) + '\n'); changed.push(name);
+      if (value === null) fs.rmSync(join(directory, name), { force: true });
+      else replace(name, typeof value === 'string' ? value : JSON.stringify(value, null, 2) + '\n');
+      changed.push(name);
     }
     fs.rmSync(marker);
   } catch {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join } from 'node:path';
 import { APIError } from '../model/errors.ts';
-import { ConfigurationError, errorMessage, readModelSelection, readModelOptions, saveModelConfiguration, type ModelConfiguration, type ModelSelection, type ProviderOption, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
+import { ConfigurationError, errorMessage, readModelSelection, readModelOptions, saveModelConfiguration, readSystemPrompt, validateSystemPrompt, type SystemPromptConfiguration, type ModelConfiguration, type ModelSelection, type ProviderOption, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
 import type { Config } from '../config/config.ts';
 import { Store } from '../repository/store.ts';
 import type { SessionRecord } from '../model/types.ts';
@@ -18,12 +18,12 @@ export interface DisplayEvent extends SessionEvent { id: number; at: number }
 function runtimeSettings(value: unknown, defaultDirectory: string): PiSettings & ModelConfiguration {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new APIError(400, 'INVALID_REQUEST', 'config 必须为对象');
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['provider', 'model', 'base_url', 'api', 'api_key', 'clear_api_key', 'extensions'].includes(key))) {
-    throw new APIError(400, 'INVALID_REQUEST', '只接受模型、接口、API Key 和扩展配置；目录由 adaptor 管理');
+  if (Object.keys(input).some(key => !['provider', 'model', 'base_url', 'api', 'api_key', 'clear_api_key', 'system_prompt', 'extensions'].includes(key))) {
+    throw new APIError(400, 'INVALID_REQUEST', '只接受模型、接口、API Key、系统提示词和扩展配置；目录由 adaptor 管理');
   }
   const settings: PiSettings & ModelConfiguration = { pi_config_dir: defaultDirectory };
   if (input.provider !== undefined || input.model !== undefined) {
-    if (typeof input.provider !== 'string' || !input.provider.trim() || typeof input.model !== 'string' || !input.model.trim()) {
+    if (typeof input.provider !== 'string' || typeof input.model !== 'string' || !!input.provider.trim() !== !!input.model.trim()) {
       throw new APIError(400, 'INVALID_REQUEST', 'provider 和 model 需要同时填写');
     }
     settings.provider = input.provider.trim(); settings.model = input.model.trim();
@@ -40,6 +40,10 @@ function runtimeSettings(value: unknown, defaultDirectory: string): PiSettings &
   }
   if (!settings.provider && (settings.base_url || settings.api || settings.api_key || settings.clear_api_key)) {
     throw new APIError(400, 'INVALID_REQUEST', '请先填写 Provider 和 Model');
+  }
+  if (input.system_prompt !== undefined) {
+    try { settings.system_prompt = validateSystemPrompt(input.system_prompt); }
+    catch (error) { throw new APIError(400, 'INVALID_CONFIG', error instanceof ConfigurationError ? error.message : '系统提示词配置无效'); }
   }
   if (input.extensions !== undefined) {
     if (!Array.isArray(input.extensions) || input.extensions.length > 20 || input.extensions.some(path => typeof path !== 'string' || !isAbsolute(path))) {
@@ -95,7 +99,10 @@ export class Sessions {
     let selection: ModelSelection = {}; let modelOptions: ProviderOption[] = []; let configurationIssue: string | null = null;
     try { selection = readModelSelection(directories.pi_config_dir); modelOptions = readModelOptions(directories.pi_config_dir); }
     catch (error) { configurationIssue = errorMessage(error); }
-    return { runtime: { harness: 'pi' as const, config: { extensions: settings.extensions ?? [], ...selection } },
+    let systemPrompt: SystemPromptConfiguration = { mode: 'default', text: '' };
+    try { systemPrompt = readSystemPrompt(directories.pi_config_dir); }
+    catch (error) { configurationIssue ??= errorMessage(error); }
+    return { runtime: { harness: 'pi' as const, config: { extensions: settings.extensions ?? [], ...selection, system_prompt: systemPrompt } },
       model_options: modelOptions, configuration_issue: configurationIssue, directories };
   }
 
@@ -131,7 +138,8 @@ export class Sessions {
     const { pi_config_dir, extensions, ...modelConfig } = settings;
     try { saveModelConfiguration(directories.pi_config_dir, modelConfig); }
     catch (error) { throw new APIError(400, 'INVALID_CONFIG', error instanceof ConfigurationError ? error.message : '无法保存 pi-config 配置，请检查目录权限'); }
-    this.store.configure(agentId, directories.cwd, { pi_config_dir, extensions });
+    this.store.configure(agentId, directories.cwd, { pi_config_dir,
+      extensions: extensions ?? (existing ? JSON.parse(existing.config_json).extensions : []) });
     await this.reconcileNow(agentId);
     return this.view(agentId);
   }

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, type MainSession, type ProviderOption, type RuntimeDetails } from './api';
+import { api, type MainSession, type ProviderOption, type RuntimeDetails, type SystemPromptConfiguration } from './api';
 
 const protocols = [
   ['openai-completions', 'OpenAI Chat Completions'], ['openai-responses', 'OpenAI Responses'],
@@ -24,6 +24,8 @@ export function RuntimeConfigDialog({ agentId, onSaved, onClose }: {
   const [apiKey, setApiKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [extensions, setExtensions] = useState('');
+  const [promptMode, setPromptMode] = useState<SystemPromptConfiguration['mode']>('default');
+  const [promptText, setPromptText] = useState('');
   const [urlEdited, setUrlEdited] = useState(false);
   const [apiEdited, setApiEdited] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,6 +38,7 @@ export function RuntimeConfigDialog({ agentId, onSaved, onClose }: {
       setData(value);
       const config = value.runtime.config;
       setProvider(config.provider ?? ''); setModel(config.model ?? ''); setExtensions(config.extensions?.join('\n') ?? '');
+      setPromptMode(config.system_prompt.mode); setPromptText(config.system_prompt.text);
       const preset = defaults(value.model_options.find(option => option.id === config.provider), config.model ?? '');
       setBaseUrl(preset.baseUrl); setApiType(preset.apiType);
       if (value.configuration_issue) setError(value.configuration_issue);
@@ -60,8 +63,12 @@ export function RuntimeConfigDialog({ agentId, onSaved, onClose }: {
   async function save(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
-      const config = { ...(provider || model ? { provider, model, base_url: baseUrl, api: apiType,
+      if (promptMode === 'replace' && (!promptText.trim() || new TextEncoder().encode(promptText).length > 65536)) {
+        throw new Error('替换模式需要填写系统提示词，UTF-8 长度不能超过 64 KiB');
+      }
+      const config = { provider, model, ...(provider || model ? { base_url: baseUrl, api: apiType,
         ...(apiKey.trim() ? { api_key: apiKey } : {}), ...(clearKey ? { clear_api_key: true } : {}) } : {}),
+        system_prompt: { mode: promptMode, text: promptMode === 'replace' ? promptText : '' },
         extensions: extensions.split('\n').map(value => value.trim()).filter(Boolean) };
       const state = await api<MainSession>(`/agents/${agentId}/runtime`, { method: 'PATCH', body: JSON.stringify({ harness: 'pi', config }) });
       setApiKey(''); onSaved(state);
@@ -71,7 +78,7 @@ export function RuntimeConfigDialog({ agentId, onSaved, onClose }: {
 
   return <div className="overlay"><section role="dialog" aria-modal="true" aria-labelledby="runtime-title" className="dialog runtime-dialog">
     <h2 id="runtime-title">Pi 运行配置</h2>
-    <p>模型和认证只保存到此 Agent 的 pi-config。缺少配置时保持待配置。</p>
+    <p>模型、认证和系统提示词保存在此 Agent 自己的 pi-config 中。</p>
     <form onSubmit={save} autoComplete="off"><fieldset disabled={busy || !data} className="runtime-fields">
       <div className="model-fields"><div><label htmlFor="runtime-provider">Provider</label>
         <input id="runtime-provider" list="runtime-providers" required={hasFields} autoFocus value={provider} onChange={event => changeProvider(event.target.value)} placeholder="选择或输入服务标识" />
@@ -95,6 +102,16 @@ export function RuntimeConfigDialog({ agentId, onSaved, onClose }: {
         {protocols.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
         {apiType && !protocols.some(([value]) => value === apiType) && <option value={apiType}>{apiType}</option>}
       </select>
+      <label htmlFor="runtime-prompt-mode">系统提示词</label>
+      <select id="runtime-prompt-mode" value={promptMode} onChange={event => setPromptMode(event.target.value as SystemPromptConfiguration['mode'])}>
+        <option value="default">Pi 默认</option><option value="replace">替换</option>
+      </select>
+      {promptMode === 'replace' ? <>
+        <label htmlFor="runtime-prompt-text">替换提示词正文</label>
+        <textarea id="runtime-prompt-text" className="system-prompt-text" rows={7} required value={promptText}
+          onChange={event => setPromptText(event.target.value)} placeholder="填写这个 Agent 的身份、职责和行为要求" />
+        <small className="field-hint">替换 Pi 默认提示词主体；项目指令、Skills 和工作目录仍会追加。工具能力不变。最多 64 KiB。</small>
+      </> : <small className="field-hint">使用 Pi 内置系统提示词。保存后移除这个 Agent 的 SYSTEM.md。</small>}
       <details className="runtime-advanced"><summary>目录与扩展</summary>
         <label htmlFor="runtime-cwd">工作目录</label><textarea id="runtime-cwd" rows={2} readOnly value={data?.directories.cwd ?? ''} />
         <label htmlFor="runtime-directory">Pi 私有配置目录</label><textarea id="runtime-directory" rows={2} readOnly value={data?.directories.pi_config_dir ?? ''} />
