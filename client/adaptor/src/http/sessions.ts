@@ -22,7 +22,7 @@ export async function handleSessions(request: IncomingMessage, response: ServerR
       const input = await body(request);
       const inputId = Number(match[3]);
       if (!Number.isSafeInteger(inputId) || inputId < 1 || input.confirmed !== true || (input.action !== 'retry' && input.action !== 'accepted')) {
-        throw new APIError(400, 'INVALID_REQUEST', '需要核对原输入及 Pi 历史后确认处理方式');
+        throw new APIError(400, 'INVALID_REQUEST', '需要核对原输入及会话历史后确认处理方式');
       }
       await sessions.resolveInput(record.session_id, inputId, input.action);
       return json(response, 200, { status: 'ok' });

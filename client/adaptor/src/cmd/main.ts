@@ -7,13 +7,13 @@ import { Sessions } from '../service/sessions.ts';
 import { Agents } from '../service/agents.ts';
 import { Dispatcher } from '../service/dispatch.ts';
 import { ImMcp } from '../service/im-mcp.ts';
-import { createSession } from '../clients/harnesses.ts';
+import { createHarnesses } from '../clients/harnesses.ts';
 
 process.umask(0o077);
 const config = loadConfig(resolve(process.argv[2] ?? process.env.ADAPTOR_CONFIG ?? 'localdeploy/adaptor/config.json'));
 const store = new Store(config.sqlite_path);
 const mcp = new ImMcp(store, config);
-const sessions = new Sessions(store, config, createSession, id => [mcp.connection(id)]);
+const sessions = new Sessions(store, config, createHarnesses(config), id => [mcp.connection(id)]);
 const dispatcher = new Dispatcher(store, sessions);
 sessions.onReady = id => dispatcher.wake(id);
 const connections = new Connections(store, config, id => dispatcher.wake(id));

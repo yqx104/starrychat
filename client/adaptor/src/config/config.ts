@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 export interface Config {
   address: string;
@@ -29,7 +28,6 @@ export function loadConfig(path: string): Config {
   if ('data_root' in config) throw new Error('data_root 已由 agent_root 替代，请停服并迁移现有 Agent 目录和数据库路径');
   config.agent_root = resolve(config.agent_root);
   if (config.pi_cli_path !== undefined && (typeof config.pi_cli_path !== 'string' || !config.pi_cli_path)) throw new Error('配置 pi_cli_path 无效');
-  config.pi_cli_path = config.pi_cli_path ? resolve(dirname(path), config.pi_cli_path) :
-    fileURLToPath(new URL('../../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url));
+  if (config.pi_cli_path) config.pi_cli_path = resolve(dirname(path), config.pi_cli_path);
   return config;
 }

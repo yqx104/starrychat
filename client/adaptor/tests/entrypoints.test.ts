@@ -33,7 +33,7 @@ test('cmd entrypoints initialize an empty database, reject overwrites and shut d
       writeFileSync(configPath, JSON.stringify({ address: '127.0.0.1:0', adaptor_id: 'entrypoint-test',
         im_base_url: 'http://127.0.0.1:9', trigger_ws_url: 'ws://127.0.0.1:9', sqlite_path: 'test.sqlite', agent_root: join(root, 'agents') }));
       const config = loadConfig(configPath);
-      assert.equal(config.pi_cli_path, fileURLToPath(new URL('../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)));
+      assert.equal(config.pi_cli_path, undefined, 'the Pi harness owns its default executable');
       const init = fileURLToPath(new URL(`../${directory}/cmd/init-db.${extension}`, import.meta.url));
       const initialized = spawnSync(process.execPath, [init, configPath], { encoding: 'utf8', timeout: 5000 });
       assert.equal(initialized.status, 0, initialized.stderr);

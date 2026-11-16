@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { McpConnection } from '../model/types.ts';
+import type { McpConnection } from '@starrychat/adaptor-contracts';
 import { ConfigurationError } from '../model/errors.ts';
 import { readPrivateConfig, writePrivateConfigs } from './files.ts';
 

@@ -16,7 +16,10 @@ starrychat/
 │       └── im-web/     IM 前端
 ├── client/
 │   ├── adaptor/
-│   │   ├── backend/    TypeScript/SQLite 客户端后端
+│   │   ├── src/        TypeScript/SQLite 客户端服务
+│   │   ├── sql/        SQLite 表结构
+│   │   ├── tests/      服务测试
+│   │   ├── contracts/  运行器公共接口与错误类型
 │   │   └── frontend/   React/Vite 客户端前端
 │   └── pi-adaptor/     Pi 原生 RPC 的会话适配库
 ├── agents/pi/           内置默认 Pi Agent
@@ -32,7 +35,8 @@ starrychat/
 | [Trigger](server/backend/trigger/README.md) | 独立 Go 模块，接收 channel 消息并向订阅的 Agent 投递；首版来源为 IM 单聊和群聊。 |
 | [默认 Pi Agent](agents/pi/README.md) | 本地维护的 Pi harness，通过原生 RPC 执行模型与工具并保存会话历史。 |
 | [客户端 Adaptor](client/adaptor/README.md) | 接入 IM Agent，接收与持久化消息，管理主会话、派发与恢复，提供通用 IM MCP 工具。 |
-| [Pi 适配库](client/pi-adaptor/README.md) | 封装 RpcClient 的启动、精确恢复、steer、事件、状态检查与关闭，负责 Pi 私有 MCP 配置。 |
+| [运行器公共接口](client/adaptor/contracts/README.md) | 配置管理、会话、回执、事件、恢复核对和 MCP 连接契约，不依赖具体 Agent。 |
+| [Pi 适配库](client/pi-adaptor/README.md) | 管理 Pi 配置和原生会话引用，封装 RpcClient、steer、事件与历史核对，负责 Pi 私有 MCP 接入。 |
 
 IM 只承担聊天职责。Trigger 承担触发和路由职责。Pi 的底层库留在默认 Agent 边界内，IM 和 Trigger 不依赖 Pi。
 

@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
-import { PiSession, InputError, writeModelSelection, type OpenConfig, type SessionEvent } from '../../src/index.ts';
+import { InputError, type SessionEvent } from '@starrychat/adaptor-contracts';
+import { PiSession, createPiHarness, writeModelSelection, type OpenConfig } from '../../src/index.ts';
 
 const cliPath = fileURLToPath(new URL('../fixtures/rpc.mjs', import.meta.url));
 const resources = new Map<string, PiSession[]>();
@@ -29,6 +30,24 @@ function fixture(t: TestContext, settings = {}): OpenConfig {
 }
 function commands(config: OpenConfig): any[] { return readFileSync(join(config.cwd, 'commands.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line)); }
 
+test('Pi harness owns native identity, preserves existing references and refuses invalid restoration', async t => {
+  const { cwd } = fixture(t);
+  const harness = createPiHarness({ cliPath });
+  const config = { root: cwd, cwd, sessionDir: join(cwd, 'sessions'), settings: { pi_config_dir: join(cwd, 'pi-config') },
+    nativeRef: null, allowCreate: true };
+  const first = harness.createSession(config);
+  const ref = first.nativeRef as { session_id: string; session_file: string | null };
+  assert.match(ref.session_id, /^[0-9a-f-]{36}$/); assert.equal(ref.session_file, null);
+  const legacyRef = { session_id: randomUUID(), session_file: join(config.sessionDir, 'existing.jsonl') };
+  const restored = harness.createSession({ ...config, nativeRef: legacyRef, allowCreate: false });
+  assert.deepEqual(restored.nativeRef, legacyRef);
+  assert.throws(() => harness.createSession({ ...config, allowCreate: false }), /缺少 Pi 会话引用/);
+  assert.throws(() => harness.createSession({ ...config, nativeRef: { thread: 'not-a-pi-reference' } }), /会话引用无效/);
+  assert.throws(() => harness.createSession({ ...config, nativeRef: { ...legacyRef, session_file: join(cwd, 'outside.jsonl') } }), /迁移/);
+  assert.throws(() => harness.createSession({ ...config, settings: { pi_config_dir: join(cwd, 'other-config') } }), /迁移/);
+  await first.close(); await restored.close();
+});
+
 test('native RpcClient starts, steers, maps safe events and restores the exact persisted session', async t => {
   const config = fixture(t);
   const events: SessionEvent[] = [];
@@ -42,7 +61,9 @@ test('native RpcClient starts, steers, maps safe events and restores the exact p
   assert.equal((await session.sendInput({ id: 2, text: 'second' })).disposition, 'queued');
   assert.equal((await session.sendInput({ id: 3, text: 'HANDLED' })).disposition, 'handled');
   const state = await session.getState(); assert(state.nativeRef.session_file); assert.equal(state.status, 'busy');
-  assert.deepEqual([...await session.persistedInputs()], ['first']);
+  const inputs = [{ id: 1, text: 'first' }, { id: 2, text: 'second' }, { id: 3, text: 'HANDLED' }];
+  assert.deepEqual([...await session.recoverInputs(inputs)], [1]);
+  assert.deepEqual([...await session.recoverInputs([{ id: 1, text: 'changed input' }])], []);
   assert(commands(config).filter(command => command.type === 'prompt').every(command => command.streamingBehavior === 'steer'));
   assert(events.some(event => event.type === 'text')); assert(events.some(event => event.type === 'tool'));
   assert(!JSON.stringify(events).includes('must-not-be-exposed'));
@@ -50,7 +71,7 @@ test('native RpcClient starts, steers, maps safe events and restores the exact p
   const restored = create({ ...config, allowCreate: false, nativeRef: state.nativeRef });
   t.after(() => restored.close());
   assert.equal((await restored.open()).nativeRef.session_id, config.nativeRef.session_id);
-  assert.deepEqual([...await restored.persistedInputs()], ['first']);
+  assert.deepEqual([...await restored.recoverInputs(inputs)], [1]);
   // File created before the SQLite path update is found by exact native identity.
   await restored.close();
   const found = create({ ...config, allowCreate: false }); t.after(() => found.close());
@@ -109,5 +130,5 @@ test('idle subprocess death is reported by the periodic state check', async t =>
   const session = create(config); t.after(() => session.close());
   const events: SessionEvent[] = []; session.onEvent(event => events.push(event));
   await session.open(); await delay(500); t.mock.timers.tick(10000); await delay(20);
-  assert(events.some(event => event.type === 'error' && event.phase === 'probe'));
+  assert(events.some(event => event.type === 'error' && event.fatal));
 });

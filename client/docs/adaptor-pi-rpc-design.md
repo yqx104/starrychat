@@ -202,7 +202,7 @@ adaptor 保存自己的逻辑 `session_id`，同时保存 pi-adaptor 返回的�
 
 ### 6.1 Dispatcher 的职责和数量
 
-新增 `backend/src/service/dispatch.ts`，由 `main.ts` 在启动时创建一个 Dispatcher，注入存储层和会话管理模块。一个 adaptor 后端共用这个 Dispatcher，由它负责从 inbox 取输入、找到目标会话对象、提交输入和保存回执。它运行在后端进程内，不需要独立进程。
+新增 `src/service/dispatch.ts`，由 `main.ts` 在启动时创建一个 Dispatcher，注入存储层和会话管理模块。一个 adaptor 后端共用这个 Dispatcher，由它负责从 inbox 取输入、找到目标会话对象、提交输入和保存回执。它运行在后端进程内，不需要独立进程。
 
 Dispatcher 按 session 分别维护派发状态。首版每个 Agent 只有一个主 session，因此表现为各 Agent 独立投递；以后同一个 Agent 的主、子 session 也可独立推进。
 
@@ -354,17 +354,17 @@ SQLite 收件去重不能保证模型和工具只执行一次。RPC 请求 ID �
 
 | 位置 | 改动 |
 | --- | --- |
-| [schema.sql](../adaptor/backend/sql/schema.sql) | 增加会话配置、主 session 绑定和输入投递字段；保留账号凭据及收件去重约束。 |
-| [store.ts](../adaptor/backend/src/repository/store.ts) | 集中执行 SQLite 读写、事务、收件去重与原子状态更新；公共响应由业务层隐藏凭据。 |
-| [connections.ts](../adaptor/backend/src/service/connections.ts) | 协调收件落盘后 ACK，并通知派发模块；底层连接、心跳、重连及协议收发由 `clients/trigger.ts` 负责。 |
-| [server.ts](../adaptor/backend/src/http/server.ts) | 创建 HTTP 服务并分发账号、会话接口，统一处理错误；`http/agents.ts`、`http/sessions.ts` 调用业务层，账号接入与启停流程在 `service/agents.ts`，会话配置、恢复和生命周期在 `service/sessions.ts`。 |
-| [config.ts](../adaptor/backend/src/config/config.ts) | 增加运行数据根目录、Pi CLI 定位等本机配置；每个 session 的运行配置由存储层管理，只保存一份。 |
-| [main.ts](../adaptor/backend/src/cmd/main.ts) | 组装会话管理与 pi-adaptor，按 `enabled` 恢复连接和配置完整的主 session；退出时先完成异步清理，再关闭数据库。 |
-| [init-db.ts](../adaptor/backend/src/cmd/init-db.ts) | 使用当前完整 schema 显式初始化空库，拒绝覆盖已有库；已有库按 AGENTS.md 停服后在本机直接调整结构，服务启动只检查结构。 |
+| [schema.sql](../adaptor/sql/schema.sql) | 增加会话配置、主 session 绑定和输入投递字段；保留账号凭据及收件去重约束。 |
+| [store.ts](../adaptor/src/repository/store.ts) | 集中执行 SQLite 读写、事务、收件去重与原子状态更新；公共响应由业务层隐藏凭据。 |
+| [connections.ts](../adaptor/src/service/connections.ts) | 协调收件落盘后 ACK，并通知派发模块；底层连接、心跳、重连及协议收发由 `clients/trigger.ts` 负责。 |
+| [server.ts](../adaptor/src/http/server.ts) | 创建 HTTP 服务并分发账号、会话接口，统一处理错误；`http/agents.ts`、`http/sessions.ts` 调用业务层，账号接入与启停流程在 `service/agents.ts`，会话配置、恢复和生命周期在 `service/sessions.ts`。 |
+| [config.ts](../adaptor/src/config/config.ts) | 增加运行数据根目录、Pi CLI 定位等本机配置；每个 session 的运行配置由存储层管理，只保存一份。 |
+| [main.ts](../adaptor/src/cmd/main.ts) | 组装会话管理与 pi-adaptor，按 `enabled` 恢复连接和配置完整的主 session；退出时先完成异步清理，再关闭数据库。 |
+| [init-db.ts](../adaptor/src/cmd/init-db.ts) | 使用当前完整 schema 显式初始化空库，拒绝覆盖已有库；已有库按 AGENTS.md 停服后在本机直接调整结构，服务启动只检查结构。 |
 | 新增会话管理模块 | 根据 Agent 的 `enabled` 和配置协调主 session 的启动关闭；维护运行句柄与实际状态，防止重复打开同一 session。 |
 | 新增输入派发模块 | 后端创建一个 Dispatcher，按 session 并发派发；合并唤醒，从 inbox 领取输入、调用会话对象、处理回执和恢复。具体流程见第六节。 |
 
-会话管理与输入派发分别位于 `backend/src/service/sessions.ts`、`backend/src/service/dispatch.ts`，会话工厂位于 `backend/src/clients/harnesses.ts`。`harnesses.ts` 只需提供从 `harness=pi` 到会话工厂的选择，首版不引入复杂插件注册框架。
+会话管理与输入派发分别位于 `src/service/sessions.ts`、`src/service/dispatch.ts`，会话工厂位于 `src/clients/harnesses.ts`。`harnesses.ts` 只需提供从 `harness=pi` 到会话工厂的选择，首版不引入复杂插件注册框架。
 
 ### 7.2 数据表改动
 
@@ -412,7 +412,7 @@ SQLite 收件去重不能保证模型和工具只执行一次。RPC 请求 ID �
 | 位置 | 改动 |
 | --- | --- |
 | [根 package.json](../../package.json) | 注册 `client/pi-adaptor` workspace，建立本地依赖和构建顺序，更新锁文件。 |
-| [adaptor backend package.json](../adaptor/backend/package.json) | 引用新的 pi-adaptor 模块。 |
+| [adaptor package.json](../adaptor/package.json) | 引用新的 pi-adaptor 模块。 |
 | [agents/pi](../../agents/pi/README.md) | 保持本地 Pi harness 来源；说明 RPC 运行入口与构建要求。 |
 | 本机启停与配置 | 打开 Pi 会话前检查入口可用，失败不阻塞 adaptor 收件；停止时等待其管理的 Pi 进程退出；会话和私有配置保存在本机运行目录。 |
 | README 与模块说明 | 更新已接通的 IM 同步现状，说明 RPC 接入、配置和验证方式。 |
@@ -470,7 +470,7 @@ IM 发言统一使用 adaptor 提供的 `im_send_message` MCP 工具，凭据绑
 - 每个已打开实例按 10 秒间隔检查状态；检查不重叠，关闭后不再检查，迟到结果不会覆盖新实例状态。
 - 前端关闭不影响后台运行，公开接口不返回 IM Token 或模型密钥。
 
-现有 [收件测试](../adaptor/backend/tests/receipt.test.ts) 与 [跨服务集成测试](../../server/backend/trigger/tests/adaptor_integration_test.go) 需要保留。测试应覆盖实际 RPC 协议和持久化边界；真实模型调用单独使用已配置的模型环境验证。
+现有 [收件测试](../adaptor/tests/receipt.test.ts) 与 [跨服务集成测试](../../server/backend/trigger/tests/adaptor_integration_test.go) 需要保留。测试应覆盖实际 RPC 协议和持久化边界；真实模型调用单独使用已配置的模型环境验证。
 
 ## 10 本期 MVP 实现时需要收敛的细节
 

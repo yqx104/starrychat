@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import { Store } from '../src/repository/store.ts';
 import { Sessions } from '../src/service/sessions.ts';
 import { prepareAgentDirectories } from '../src/service/directories.ts';
+import { piDirectories } from '@starrychat/pi-adaptor';
 import { createApp } from '../src/http/server.ts';
 import { Agents } from '../src/service/agents.ts';
 import { Connections } from '../src/service/connections.ts';
@@ -27,7 +28,7 @@ test('HTTP prompt modes reach two real Pi instances and survive default changes 
   const store = new Store(path);
   const config = { address: '127.0.0.1:4183', im_base_url: 'http://127.0.0.1:9', trigger_ws_url: 'ws://127.0.0.1:9',
     adaptor_id: 'test', sqlite_path: path, agent_root: join(directory, 'agents'),
-    pi_cli_path: fileURLToPath(new URL('../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)) };
+    pi_cli_path: fileURLToPath(new URL('../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)) };
   const requests: any[] = [];
   const model = createServer(async (request, response) => {
     const chunks = []; for await (const chunk of request) chunks.push(chunk);
@@ -60,7 +61,8 @@ test('HTTP prompt modes reach two real Pi instances and survive default changes 
   for (const id of ['a', 'b'] as const) {
     store.add({ agent_id: id, name: id, username: id, token: 'test-token', expires_at: Date.now() + 3600000 });
     store.enable(id, false);
-    const dirs = prepareAgentDirectories(config, id);
+    const dirs = piDirectories(prepareAgentDirectories(config, id));
+    mkdirSync(dirs.pi_config_dir, { recursive: true, mode: 0o700 });
     assert.equal((await runtime(id)).runtime.config.system_prompt.mode, 'default');
     mkdirSync(join(dirs.cwd, '.pi'));
     writeFileSync(join(dirs.cwd, '.pi', 'SYSTEM.md'), 'UNWANTED_WORKSPACE_PROMPT');

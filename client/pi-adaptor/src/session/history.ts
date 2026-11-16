@@ -1,6 +1,17 @@
 import { existsSync, mkdirSync, openSync, readSync, closeSync, readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { NativeRef } from '../model/types.ts';
+
+export function parseNativeRef(value: unknown): NativeRef | null {
+  if (value == null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('Pi 会话引用无效，请核对原会话');
+  const ref = value as Partial<NativeRef>;
+  if (typeof ref.session_id !== 'string' || !ref.session_id ||
+      ref.session_file !== null && (typeof ref.session_file !== 'string' || !isAbsolute(ref.session_file))) {
+    throw new Error('Pi 会话引用无效，请核对原会话');
+  }
+  return { session_id: ref.session_id, session_file: ref.session_file };
+}
 
 function header(path: string): { type: string; id: string } {
   const fd = openSync(path, 'r');

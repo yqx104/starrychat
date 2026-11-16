@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import type { Disposition, NativeRef, PiSettings } from '@starrychat/pi-adaptor';
+import type { Disposition } from '@starrychat/adaptor-contracts';
 
 import type { Agent, Delivery, InputState, InboxRow, SessionRecord } from '../model/types.ts';
 
@@ -68,13 +68,13 @@ export class Store {
   sessionById(id: string): SessionRecord | undefined {
     return this.db.prepare('SELECT * FROM sessions WHERE session_id=?').get(id) as unknown as SessionRecord | undefined;
   }
-  configure(agentId: string, cwd: string, settings: PiSettings) {
-    this.db.prepare(`INSERT INTO sessions (session_id,agent_id,harness,cwd,config_json,native_ref_json) VALUES (?,?,'pi',?,?,?)
+  configure(agentId: string, harness: string, cwd: string, settings: unknown) {
+    this.db.prepare(`INSERT INTO sessions (session_id,agent_id,harness,cwd,config_json,native_ref_json) VALUES (?,?,?,?,?,NULL)
       ON CONFLICT(agent_id) DO UPDATE SET cwd=excluded.cwd,config_json=excluded.config_json`)
-      .run(randomUUID(), agentId, cwd, JSON.stringify(settings), JSON.stringify({ session_id: randomUUID(), session_file: null }));
+      .run(randomUUID(), agentId, harness, cwd, JSON.stringify(settings));
     return this.session(agentId)!;
   }
-  nativeRef(id: string, ref: NativeRef) {
+  nativeRef(id: string, ref: unknown) {
     this.db.prepare('UPDATE sessions SET native_ref_json=? WHERE session_id=?').run(JSON.stringify(ref), id);
   }
   nextInput(agentId: string): InboxRow | undefined {

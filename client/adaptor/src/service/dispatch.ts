@@ -1,4 +1,4 @@
-import { InputError, errorMessage } from '@starrychat/pi-adaptor';
+import { InputError, errorMessage } from '@starrychat/adaptor-contracts';
 import { Store } from '../repository/store.ts';
 import { Sessions } from './sessions.ts';
 import { formatInput } from './input.ts';

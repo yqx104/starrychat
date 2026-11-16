@@ -56,9 +56,9 @@ test('WS → SQLite ACK → Dispatcher → real Pi RPC → local model/tool → 
   const store = new Store(path);
   const config = { address: '127.0.0.1:4183', im_base_url: 'http://127.0.0.1:9', trigger_ws_url: `ws://127.0.0.1:${triggerAddress.port}`,
     adaptor_id: 'real-pi-test', sqlite_path: path, agent_root: agentRoot,
-    pi_cli_path: fileURLToPath(new URL('../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)) };
+    pi_cli_path: fileURLToPath(new URL('../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)) };
   store.add({ agent_id: 'a', name: 'a', username: 'a', token: 'private-im-test-token', expires_at: Date.now() + 3600000 });
-  store.configure('a', workspace, { pi_config_dir: piConfig });
+  store.configure('a', 'pi', workspace, { pi_config_dir: piConfig });
   let sessions = new Sessions(store, config); let dispatcher = new Dispatcher(store, sessions);
   sessions.onReady = id => dispatcher.wake(id);
   const connections = new Connections(store, config, id => dispatcher.wake(id));

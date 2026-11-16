@@ -1,4 +1,4 @@
-import type { Disposition } from '@starrychat/pi-adaptor';
+import type { Disposition } from '@starrychat/adaptor-contracts';
 
 export interface Agent {
   agent_id: string;
@@ -31,6 +31,6 @@ export interface InboxRow {
   state: InputState; receipt_disposition: Disposition | null; last_error: string | null;
 }
 export interface SessionRecord {
-  session_id: string; agent_id: string; harness: 'pi'; cwd: string;
+  session_id: string; agent_id: string; harness: string; cwd: string;
   config_json: string; native_ref_json: string | null;
 }

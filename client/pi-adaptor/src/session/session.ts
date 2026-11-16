@@ -2,7 +2,8 @@ import { mkdirSync, statSync } from 'node:fs';
 import type { RpcClient } from '@earendil-works/pi-coding-agent';
 import { displayEvent } from './events.ts';
 import { ConfigurationError, InputError, errorMessage } from '../model/errors.ts';
-import type { Input, NativeRef, OpenConfig, Receipt, Session, SessionEvent, SessionState } from '../model/types.ts';
+import type { Input, Receipt, Session, SessionEvent } from '@starrychat/adaptor-contracts';
+import type { NativeRef, OpenConfig, PiSessionState } from '../model/types.ts';
 import { readModelSelection } from '../config/selection.ts';
 import { readPrivateConfig } from '../config/files.ts';
 import { readSystemPrompt } from '../config/prompt.ts';
@@ -15,13 +16,15 @@ export class PiSession implements Session {
   private rpc?: RpcClient;
   private listeners = new Set<(event: SessionEvent) => void>();
   private timer?: NodeJS.Timeout;
-  private checking?: Promise<SessionState>;
+  private checking?: Promise<PiSessionState>;
   private closing?: Promise<void>;
   private closed = false;
   private unsettled = false;
   private ref: NativeRef;
 
   constructor(config: OpenConfig) { this.config = config; this.ref = { ...config.nativeRef }; }
+
+  get nativeRef(): NativeRef { return { ...this.ref }; }
 
   onEvent(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private emit(event: SessionEvent) { if (!this.closed) for (const listener of this.listeners) listener(event); }
@@ -31,7 +34,7 @@ export class PiSession implements Session {
     this.ref.session_file = locateSessionFile(this.ref, sessionDir, allowCreate);
   }
 
-  async open(): Promise<SessionState> {
+  async open(): Promise<PiSessionState> {
     if (this.rpc || this.closed) throw new Error('会话实例不能重复打开');
     const selection = readModelSelection(this.config.settings.pi_config_dir);
     if (!selection.provider || !selection.model) throw new ConfigurationError('请在运行配置中选择 Provider 和 Model（保存到 pi-config/settings.json）');
@@ -59,7 +62,7 @@ export class PiSession implements Session {
       const mapped = displayEvent(event);
       if (mapped) this.emit(mapped);
       if (['agent_start', 'agent_settled', 'compaction_end', 'queue_update', 'entry_appended'].includes(event.type)) {
-        void this.getState().catch(error => this.emit({ type: 'error', phase: 'probe', text: errorMessage(error) }));
+        void this.getState().catch(error => this.emit({ type: 'error', phase: 'probe', fatal: true, text: errorMessage(error) }));
       }
     });
     try {
@@ -73,21 +76,21 @@ export class PiSession implements Session {
         throw new ConfigurationError('Pi 未加载指定模型，请检查此 Agent 的 pi-config 配置');
       }
       this.timer = setInterval(() => {
-        if (!this.checking) void this.getState().catch(error => this.emit({ type: 'error', phase: 'probe', text: errorMessage(error) }));
+        if (!this.checking) void this.getState().catch(error => this.emit({ type: 'error', phase: 'probe', fatal: true, text: errorMessage(error) }));
       }, 10000);
       this.timer.unref();
       return state;
     } catch (error) { await this.close(); throw error; }
   }
 
-  getState(): Promise<SessionState> {
+  getState(): Promise<PiSessionState> {
     if (this.closed || !this.rpc) return Promise.reject(new Error('Pi 会话未打开'));
     if (this.checking) return this.checking;
     this.checking = this.rpc.getState().then(state => {
       if (this.closed) throw new Error('Pi 会话已关闭');
       if (state.sessionId !== this.ref.session_id) throw new Error('Pi 会话身份发生变化，已停止派发');
       this.ref.session_file = validateSessionFile(this.ref, state.sessionFile);
-      const view: SessionState = { nativeRef: { ...this.ref },
+      const view: PiSessionState = { nativeRef: this.nativeRef,
         status: state.isCompacting ? 'compacting' : state.isStreaming || this.unsettled || state.pendingMessageCount > 0 ? 'busy' : 'idle',
         pending: state.pendingMessageCount, model: state.model ? { provider: state.model.provider, id: state.model.id } : null };
       this.emit({ type: 'state', state: view });
@@ -112,9 +115,10 @@ export class PiSession implements Session {
     }
   }
 
-  async persistedInputs(): Promise<Set<string>> {
+  async recoverInputs(inputs: Input[]): Promise<Set<number>> {
     this.locate();
-    return readPersistedInputs(this.ref.session_file);
+    const persisted = await readPersistedInputs(this.ref.session_file);
+    return new Set(inputs.filter(input => persisted.has(input.text)).map(input => input.id));
   }
 
   async abort() { if (this.closed || !this.rpc) throw new Error('Pi 会话未打开'); await this.rpc.abort(); }

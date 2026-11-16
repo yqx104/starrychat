@@ -76,7 +76,7 @@ test('agent HTTP routes preserve login, identity checks, enablement and safe res
   config.agent_root = root;
   const created = await request('/agents', 'POST', { username: 'a', password: 'fixture-password' }, 201);
   assert.equal(created.agent.agent_id, 'a'); assert.equal(created.agent.enabled, true);
-  assert.deepEqual(readdirSync(join(root, 'a')).sort(), ['pi-config', 'sessions', 'workspace']);
+  assert.deepEqual(readdirSync(join(root, 'a')).sort(), ['sessions', 'workspace']);
   writeFileSync(join(root, 'a', 'workspace', 'keep.txt'), 'existing work');
   assert.equal((await request('/agents/a/runtime')).directories.cwd, join(root, 'a', 'workspace'));
   for (let i = 0; i < 120 && connections.status('a').connection_state !== 'online'; i++) await delay(25);

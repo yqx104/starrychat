@@ -199,7 +199,7 @@ func TestAdaptorEndToEnd(t *testing.T) {
 	})
 	triggerURL := trigger.URL
 	wsURL := "ws" + strings.TrimPrefix(triggerURL, "http") + "/agent-connections"
-	backend, err := filepath.Abs("../../../../client/adaptor/backend")
+	backend, err := filepath.Abs("../../../../client/adaptor")
 	if err != nil {
 		t.Fatal(err)
 	}

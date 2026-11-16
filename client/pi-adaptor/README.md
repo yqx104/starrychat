@@ -1,13 +1,15 @@
 # Pi adaptor
 
-`@starrychat/pi-adaptor` 是 adaptor 后端引用的 TypeScript 库。每个 `PiSession` 封装仓库内 Pi 的原生 `RpcClient`，启动一个 Pi RPC 子进程；没有独立 HTTP 服务或自定义进程通信协议。
+`@starrychat/pi-adaptor` 实现 [adaptor 公共接口](../adaptor/contracts/README.md)，由 adaptor 后端的静态驱动列表注册。`createPiHarness()` 管理 Pi 配置、默认可执行路径、私有目录校验及原生会话引用。每个 `PiSession` 封装仓库内 Pi 的原生 `RpcClient`，启动一个 Pi RPC 子进程；没有独立 HTTP 服务或自定义进程通信协议。
 
 源码按职责分为三个目录，`src/index.ts` 保持统一对外入口：
 
 ```text
 src/
 ├── index.ts
+├── harness.ts          # 公共接口实现、默认入口与原生引用创建
 ├── config/
+│   ├── runtime.ts      # Pi 运行配置表单校验、读取、保存和目录布局
 │   ├── files.ts        # 私有配置文件读写、原子替换与回滚
 │   ├── selection.ts    # 默认 provider/model 选择
 │   ├── models.ts       # 模型候选、接口、认证配置与组合保存
@@ -19,22 +21,22 @@ src/
 │   ├── history.ts      # 会话文件定位、身份校验与历史输入读取
 │   └── environment.ts  # RPC 子进程环境变量隔离
 └── model/
-    ├── types.ts        # 公共会话契约
-    └── errors.ts       # 错误类与错误文本处理
+    ├── types.ts        # PiSettings、Pi 原生引用和内部启动参数
+    └── errors.ts       # 公共错误类型的兼容导出
 ```
 
 依赖方向为 `session → config`，两者都可依赖 `model`；`config` 不依赖会话实现。配置类型与对应配置逻辑放在一起，内部直接引用具体文件。`saveModelConfiguration()` 仍统一保存模型、认证和提示词，并在失败时整体回滚。测试按 `tests/config/` 和 `tests/session/` 对应组织，公共 RPC 子进程夹具保留在 `tests/fixtures/`。
 
 在项目根完成依赖安装及 Pi 模型目录准备后，执行 `npm run build:adaptor`。后端默认入口是 `agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js`；源码来源仍为本地 fork。Pi SDK 延迟到打开会话时加载，Pi 缺少构建或启动失败不会阻止 adaptor 收件。
 
-导出 `PiSession`、`Session`、`OpenConfig`、`SessionEvent` 和 `InputError` 等类型。使用顺序是创建对象、订阅 `onEvent()`、调用 `open()`，随后调用 `sendInput({id,text})`、`getState()`、`abort()`，最后 `close()`。一个对象只能打开一次；关闭后恢复需按同一 `nativeRef` 创建新对象。
+公共 `Session`、`SessionEvent`、回执、MCP 连接和错误类型从 `@starrychat/adaptor-contracts` 引入；Pi 包导出 `createPiHarness`、`PiSession` 以及 Pi 专属配置与原生引用类型。公共服务使用 `createPiHarness()` 返回的配置管理和会话接口，不直接读取 Pi 文件。使用顺序是创建对象、保存 `nativeRef`、订阅 `onEvent()`、调用 `open()`，随后调用 `sendInput({id,text})`、`getState()`、`abort()`，最后 `close()`。一个对象只能打开一次；关闭后恢复需按同一 `nativeRef` 创建新对象。
 
 - `open()` 先读取实例 `pi-config/settings.json` 的 `defaultProvider`、`defaultModel`，检查私有配置 JSON；使用环境变量白名单启动 RPC，再检查指定模型及认证是否可用。缺少配置抛出 `ConfigurationError`，检查失败会关闭进程。凭据来自实例 `auth.json`／`models.json`，不继承宿主机密钥、云认证链或工作目录模型设置；禁用凭据 shell 命令。普通 Pi CLI 不受此私有模式影响。
 - `open()` 核对稳定的原生 session ID；优先使用确切会话文件，未保存路径时在独立会话目录按 ID 查找。文件实际存在后才返回持久恢复路径。模型选择以当前私有配置为准，不从旧历史恢复。
 - `sendInput()` 使用 `prompt(text, undefined, 'steer')`，返回输入 ID 与 `started`／`queued`／`handled` 回执。已知的压缩拒绝可重试，缺模型／认证拒绝需修改配置；其他错误保守地视为未知结果。
 - `onEvent()` 只返回可展示的文本、工具名称与阶段、队列数量、活动、状态和错误，不暴露原始 response、模型 headers 或工具参数。迟到的原生 response 不参与输入状态更新。
-- `getState()` 验证身份并返回精简状态；打开后每 10 秒自动检查，同一实例最多一个在途检查，关闭后不再发布结果。
-- `persistedInputs()` 使用 Pi 原生历史解析器读取已经写入文件的 user 文本，仅供 adaptor 做输入核对，不重建模型上下文。扩展改写的内容可能无法关联，需要人工核对。
+- `getState()` 验证身份并返回精简状态；打开后每 10 秒自动检查，同一实例最多一个在途检查，关闭后不再发布结果。探活失败转为公共 `fatal` 错误事件，adaptor 无需解释 Pi 的阶段名称。
+- `recoverInputs(inputs)` 使用 Pi 原生历史解析器读取已写入文件的 user 文本，在 Pi 内部匹配完整输入，仅向 adaptor 返回确切确认的输入 ID，可在关闭后调用。未找到或扩展改写的输入不宣称未执行，需要保留待恢复；不重建模型上下文。
 - `close()` 停止检查，给 abort 最多 3 秒，再调用原客户端 stop（SIGTERM，约 1 秒后可 SIGKILL）。历史与绑定由 adaptor 保留。
 
 `readModelSelection()`／`writeModelSelection()` 读取或保存模型选择；`readModelOptions()` 只提供可公开的模型候选、接口与认证存在状态，`saveModelConfiguration()` 保存表单中的选择、接口和 API Key。API Key 按字面值转义后只保存在 `auth.json`，不创建宿主环境引用；留空保留、显式清除删除旧认证及 `models.json` 的旧 Key。保留其他 Provider 和现有模型参数；配置损坏时拒绝覆盖，多文件写入失败回滚，未完成保存标记会阻止 Pi 启动。`PiSettings` 只携带私有目录和扩展路径，不重复携带 provider/model。

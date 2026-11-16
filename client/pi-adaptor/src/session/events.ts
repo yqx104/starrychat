@@ -1,4 +1,4 @@
-import type { SessionEvent } from '../model/types.ts';
+import type { SessionEvent } from '@starrychat/adaptor-contracts';
 
 const text = (value: unknown) => typeof value === 'string' ? value.slice(0, 16000) : '';
 

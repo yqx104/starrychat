@@ -6,7 +6,7 @@ TypeScript 后端使用 SQLite 保存接入的 IM Agent 和本机收件箱；Rea
 
 ## 后端目录与职责
 
-后端源码位于 `backend/src/`，按职责分层：
+后端源码位于 `src/`，按职责分层：
 
 | 目录 | 职责 |
 | --- | --- |
@@ -15,10 +15,12 @@ TypeScript 后端使用 SQLite 保存接入的 IM Agent 和本机收件箱；Rea
 | `http/` | 请求解析、路由分发、响应与错误处理；`mcp.ts` 负责本机 HTTP MCP 传输和认证入口。 |
 | `service/` | 账号接入与启停、会话生命周期与恢复、输入派发、收件落盘后 ACK，以及 `im-mcp.ts` 中的通用工具和身份绑定。 |
 | `repository/` | SQLite 访问、收件去重和原子状态更新；私有文件保存独立 MCP 访问凭据。 |
-| `clients/` | IM HTTP 调用、Trigger WS 连接/心跳/重连/协议收发和 Pi 会话工厂。 |
+| `clients/` | IM HTTP 调用、Trigger WS 连接/心跳/重连/协议收发和运行器注册入口。 |
 | `model/` | 内部共享数据类型和业务错误。 |
 
-HTTP 层调用业务层，业务层使用存储层和外部客户端；客户端不访问 SQLite。Trigger 客户端通过回调交付消息，`service/connections.ts` 先完成落盘，再调用客户端发送 ACK，最后唤醒派发器。`sql/schema.sql` 继续保存当前完整结构，测试位于 `backend/tests/`。
+HTTP 层调用业务层，业务层使用存储层和外部客户端；客户端不访问 SQLite。Trigger 客户端通过回调交付消息，`service/connections.ts` 先完成落盘，再调用客户端发送 ACK，最后唤醒派发器。`sql/schema.sql` 继续保存当前完整结构，测试位于 `tests/`。
+
+公共运行接口位于 [contracts](contracts/README.md)。`Sessions` 只负责配置修改时机、会话调度与恢复状态，通过 `clients/harnesses.ts` 的静态列表选择驱动；当前默认且唯一的驱动是 Pi。模型、认证、提示词、扩展和 Pi 私有目录的读写校验由 pi-adaptor 处理。SQLite 保存驱动标识、配置和原生引用，公共层不解释引用字段；先保存驱动生成的引用再打开会话，恢复时只消费驱动确认的输入 ID。现有 Pi 数据格式、目录及 HTTP 配置响应保持兼容，不需要数据库迁移。
 
 ## 本机运行
 
@@ -47,8 +49,8 @@ npm run build:adaptor
 SQLite 路径相对于配置文件。`agent_root` 必须显式配置为绝对路径，指向各 Agent 目录的共同父目录；旧的 `data_root` 配置不再接受。Pi 默认运行仓库内 `agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js`；可用本机配置 `pi_cli_path` 指定其他构建路径。首次创建空库需要显式执行以下命令，已存在的数据库会被拒绝；服务启动只检查表结构，不自动建表或改表：
 
 ```sh
-node client/adaptor/backend/src/cmd/init-db.ts "$PWD/localdeploy/adaptor/config.json"
-node client/adaptor/backend/dist/cmd/main.js "$PWD/localdeploy/adaptor/config.json"
+node client/adaptor/src/cmd/init-db.ts "$PWD/localdeploy/adaptor/config.json"
+node client/adaptor/dist/cmd/main.js "$PWD/localdeploy/adaptor/config.json"
 ```
 
 另一个终端启动前端：
@@ -64,7 +66,7 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 1. 核对目标数据库并停止所有访问该库的应用服务。
 2. 将需要保留的账号、凭据和消息等数据备份到仓库外的本机私有目录。
 3. 使用本机 SQLite 管理连接直接执行必要的结构变更和配套 SQL，保留消息本地 ID 和去重约束。
-4. 同步更新 `backend/sql/schema.sql`、受影响的代码和测试；该文件只保存当前完整结构，供阅读和新建空库使用。
+4. 同步更新 `sql/schema.sql`、受影响的代码和测试；该文件只保存当前完整结构，供阅读和新建空库使用。
 5. 重新构建并启动服务，验证数据库结构、服务启动及受影响接口。
 6. 验证完成后删除之前的备份，这是必须完成的步骤。
 
@@ -72,7 +74,7 @@ ADAPTOR_API_TARGET=http://127.0.0.1:4183 npm run dev --workspace=@starrychat/ada
 
 ## Pi 配置与生命周期
 
-首次成功接入账号时，adaptor 在 `<agent_root>/<agent_id>/` 下自动创建 `workspace/`、`pi-config/`、`sessions/` 三个目录；创建失败时不会保存本机 Agent 记录。工作目录、Pi 私有配置目录和会话历史目录在“运行配置”页面只读展示，由后端统一计算。只支持 `harness=pi`。Provider、Model 必须同时填写，保存到该 Agent 的 `pi-config/settings.json` 中的 `defaultProvider`、`defaultModel`；清空两项后回到待配置。SQLite 只保留目录、扩展路径和会话绑定，不再另存模型选择。
+首次成功接入账号时，adaptor 在 `<agent_root>/<agent_id>/` 下自动创建 `workspace/`、`sessions/`；创建失败时不会保存本机 Agent 记录。Pi 私有 `pi-config/` 由 pi-adaptor 在保存配置时创建，既有目录继续复用。工作目录、Pi 私有配置目录和会话历史目录在“运行配置”页面只读展示。当前只注册 `harness=pi`。Provider、Model 必须同时填写，保存到该 Agent 的 `pi-config/settings.json` 中的 `defaultProvider`、`defaultModel`；清空两项后回到待配置。SQLite 只保留目录、扩展路径和会话绑定，不再另存模型选择。
 
 运行配置页面可填写 Provider、Model、接口地址（Base URL）和 API Key。Provider 和 Model 提供内置候选，也支持手填；内置模型自动确定接口类型，自定义模型需要选择 Chat Completions、Responses、Anthropic Messages 或 Google Generative AI。内置模型接口地址留空使用默认值；自定义模型需要填写地址和协议。Base URL 不包含具体请求路径、查询参数或 URL 认证信息。已知内置模型保留 Pi 的能力和兼容参数；已有自定义模型的其他参数也保留。
 
@@ -103,10 +105,10 @@ Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AG
 
 ## 数据和鉴权
 
-完整表结构在 [backend/sql/schema.sql](backend/sql/schema.sql)：
+完整表结构在 [sql/schema.sql](sql/schema.sql)：
 
 - `agents`：IM 身份、显示名与用户名缓存、短期 Bearer Token、到期时间、启用设置和时间戳。账号密码仅用于登录，不落盘；MVP 的 Token 保存在私有 SQLite 文件内，不返回给浏览器。
-- `sessions`：每个 Agent 一个稳定主 session，保存 harness、工作目录、运行配置和 Pi 原生 ID／会话文件引用。Pi 历史保存在 `<agent_root>/<agent_id>/sessions/<session_id>/`，空会话先保存 ID，文件实际生成后再保存路径。
+- `sessions`：每个 Agent 一个稳定主 session，保存 harness、工作目录、运行配置和驱动拥有的原生引用。Pi 历史保存在 `<agent_root>/<agent_id>/sessions/<session_id>/`；首次打开前保存 Pi 生成的 ID，文件实际生成后再保存路径，未启动的新增会话引用可为空。
 - `inbox`：本地递增 ID、接收 Agent、消息 ID、channel ID、完整消息 JSON、投递状态、接收回执、最近错误和接收时间。`(agent_id, message_id)` 唯一；按本地 ID 提交输入，不用不同 IM 会话各自的 `message_seq` 做全局排序。
 
 后端把账号交给 IM 登录，确认 `kind=agent` 后使用 IM 返回的 ID，不允许客户端自行指定身份。Trigger 在每次 WS 握手时调用 IM `/auth/me` 验证身份，并通过 `ready` 帧将 IM 续签的 Token 返回给本机后端保存。客户端到期前重连续签，过期的凭据需要重新认证；Trigger 到期关闭连接。IM 使用七天滚动有效期，已签发且未过期的 Token 没有即时撤销能力。
@@ -173,7 +175,7 @@ ack      {message_id}                       adaptor → Trigger
 
 投递状态是 `pending`、`sending`、`accepted`、`rejected`、`needs_recovery`。回执 `started`／`queued`／`handled` 分别代表启动、排队或扩展处理，都不代表业务任务完成；空闲依据 `agent_settled` 与状态查询，不依据 `agent_end`。
 
-关闭和恢复时，pi-adaptor 使用 Pi 的原生解析器核对持久化 user 输入是否与带本地输入 ID 的完整信封一致。找到确切记录可确认已接收；扩展改写了输入、队列未落盘、RPC 断开等无法核对的情况进入待恢复，暂停该 session。重启不会把 `sending` 直接回退为 `pending`，也不会自动重放未知结果。页面提供停用后核对与重试操作；重试可能再次执行原工具。已保存的历史文件缺失时必须恢复文件，不能静默新建空上下文。仅有 `handled` 回执且没有模型历史的空会话可按原 ID 重新打开。
+关闭和恢复时，pi-adaptor 使用 Pi 的原生解析器核对持久化 user 输入是否与带本地输入 ID 的完整信封一致，并返回已确认的输入 ID；公共层不读取或匹配原生历史文本。找到确切记录可确认已接收；扩展改写了输入、队列未落盘、RPC 断开等无法核对的情况进入待恢复，暂停该 session。重启不会把 `sending` 直接回退为 `pending`，也不会自动重放未知结果。页面提供停用后核对与重试操作；重试可能再次执行原工具。已保存的历史文件缺失时必须恢复文件，不能静默新建空上下文。仅有 `handled` 回执且没有模型历史的空会话可按原 ID 重新打开。
 
 ## 验证
 

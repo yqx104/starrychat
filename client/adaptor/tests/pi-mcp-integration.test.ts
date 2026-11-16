@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
@@ -15,7 +14,8 @@ import { Connections } from '../src/service/connections.ts';
 import { Agents } from '../src/service/agents.ts';
 import { ImMcp } from '../src/service/im-mcp.ts';
 import { createApp } from '../src/http/server.ts';
-import { createSession } from '../src/clients/harnesses.ts';
+import { createHarnesses } from '../src/clients/harnesses.ts';
+import { piDirectories } from '@starrychat/pi-adaptor';
 import { prepareAgentDirectories } from '../src/service/directories.ts';
 
 const agent = '01900000-0000-7000-8000-000000000011';
@@ -79,9 +79,9 @@ test('real Pi loads private MCP configuration, reads IM context, sends a quoted 
   db.exec(readFileSync(new URL('../sql/schema.sql', import.meta.url), 'utf8')); db.close();
   const store = new Store(dbPath);
   const config = { address: '127.0.0.1:0', adaptor_id: 'pi-mcp-test', sqlite_path: dbPath, agent_root: join(root, 'agents'),
-    im_base_url: `http://127.0.0.1:${imAddress.port}`, trigger_ws_url: 'ws://127.0.0.1:9',
-    pi_cli_path: fileURLToPath(new URL('../../../../agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js', import.meta.url)) };
-  const directories = prepareAgentDirectories(config, agent);
+    im_base_url: `http://127.0.0.1:${imAddress.port}`, trigger_ws_url: 'ws://127.0.0.1:9' };
+  const directories = piDirectories(prepareAgentDirectories(config, agent));
+  mkdirSync(directories.pi_config_dir, { recursive: true, mode: 0o700 });
   writeFileSync(join(directories.pi_config_dir, 'models.json'), JSON.stringify({ providers: { 'local-mcp-test': {
     baseUrl: `http://127.0.0.1:${modelAddress.port}/v1`, api: 'openai-completions', apiKey: 'private-model-credential',
     models: [{ id: 'local-model', name: 'Local model', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 1024,
@@ -90,9 +90,9 @@ test('real Pi loads private MCP configuration, reads IM context, sends a quoted 
   writeFileSync(join(directories.pi_config_dir, 'settings.json'), JSON.stringify({ defaultProvider: 'local-mcp-test', defaultModel: 'local-model',
     retry: { enabled: false }, compaction: { enabled: false } }));
   store.add({ agent_id: agent, name: 'Pi MCP', username: 'pi-mcp', token: 'private-im-credential', expires_at: Date.now() + 3600000 });
-  store.configure(agent, directories.cwd, { pi_config_dir: directories.pi_config_dir });
+  store.configure(agent, 'pi', directories.cwd, { pi_config_dir: directories.pi_config_dir });
   const mcp = new ImMcp(store, config);
-  const sessions = new Sessions(store, config, createSession, id => [mcp.connection(id)]);
+  const sessions = new Sessions(store, config, createHarnesses(config), id => [mcp.connection(id)]);
   const connections = new Connections(store, config);
   const agents = new Agents(store, config, connections, sessions);
   const dispatcher = new Dispatcher(store, sessions); sessions.onReady = id => dispatcher.wake(id);

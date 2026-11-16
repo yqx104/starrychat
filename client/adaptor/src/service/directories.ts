@@ -6,7 +6,7 @@ import { APIError } from '../model/errors.ts';
 export function agentDirectories(config: Config, agentId: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(agentId)) throw new APIError(400, 'INVALID_AGENT_ID', 'Agent ID 无效');
   const root = join(config.agent_root, agentId);
-  return { cwd: join(root, 'workspace'), pi_config_dir: join(root, 'pi-config'), sessions_dir: join(root, 'sessions') };
+  return { root, cwd: join(root, 'workspace'), sessions_dir: join(root, 'sessions') };
 }
 
 export function prepareAgentDirectories(config: Config, agentId: string) {

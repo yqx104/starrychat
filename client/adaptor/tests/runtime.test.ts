@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
 import { Store } from '../src/repository/store.ts';
 import type { Delivery } from '../src/model/types.ts';
-import { writeModelSelection } from '@starrychat/pi-adaptor';
+import { piDirectories, writeModelSelection } from '@starrychat/pi-adaptor';
 import { Sessions } from '../src/service/sessions.ts';
 import { prepareAgentDirectories } from '../src/service/directories.ts';
 import { Dispatcher } from '../src/service/dispatch.ts';
@@ -18,7 +18,7 @@ import { Agents } from '../src/service/agents.ts';
 import { createApp } from '../src/http/server.ts';
 
 const schema = readFileSync(new URL('../sql/schema.sql', import.meta.url), 'utf8');
-const cliPath = fileURLToPath(new URL('../../../pi-adaptor/tests/fixtures/rpc.mjs', import.meta.url));
+const cliPath = fileURLToPath(new URL('../../pi-adaptor/tests/fixtures/rpc.mjs', import.meta.url));
 async function until(condition: () => boolean, description = 'condition') {
   for (let i = 0; i < 200; i++) { if (condition()) return; await delay(25); }
   assert.fail(`Timeout: ${description}`);
@@ -40,11 +40,11 @@ function setup(t: TestContext) {
   const connections = new Connections(store, config, id => dispatcher.wake(id));
   t.after(async () => { connections.close(); dispatcher.stop(); await sessions.close(); await dispatcher.drain(); store.close(); rmSync(directory, { recursive: true, force: true }); });
   const add = (id: string, fixture = {}) => {
-    const { cwd, pi_config_dir } = prepareAgentDirectories(config, id);
+    const { cwd, pi_config_dir } = piDirectories(prepareAgentDirectories(config, id));
     writeFileSync(join(cwd, 'fixture.json'), JSON.stringify(fixture));
     store.add({ agent_id: id, username: id, name: id, token: 'private-im-token', expires_at: Date.now() + 3600000 });
     writeModelSelection(pi_config_dir, { provider: 'fixture', model: 'fixture' });
-    store.configure(id, cwd, { pi_config_dir });
+    store.configure(id, 'pi', cwd, { pi_config_dir });
     return cwd;
   };
   const inputs = (id: string) => store.inbox(id, Number.MAX_SAFE_INTEGER, 100).messages;
@@ -55,8 +55,10 @@ function setup(t: TestContext) {
 
 test('sessions dispatch concurrently, preserve per-session order/provenance and deduplicate wakeups', async t => {
   const f = setup(t); f.add('a', { receiptDelayMs: 350 }); f.add('b');
+  // Compare dispatch concurrency after both subprocesses are ready, independent of startup scheduling.
+  await Promise.all([f.sessions.reconcile('a'), f.sessions.reconcile('b')]);
   const first = delivery('a', 'a-one'); f.store.receive(first); f.store.receive(delivery('a', 'a-two', 'group')); f.store.receive(delivery('b', 'b-one'));
-  f.sessions.startAll(); f.dispatcher.start();
+  f.dispatcher.start();
   await until(() => f.inputs('b')[0].state === 'accepted');
   assert.equal(f.inputs('a')[1].state, 'sending', 'B must not wait for A receipt');
   assert.equal(f.sessions.view('a').blocked, null, 'waiting for a receipt is not a recovery pause');
