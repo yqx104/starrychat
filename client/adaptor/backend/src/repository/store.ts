@@ -35,6 +35,13 @@ export class Store {
       .run(token, expiresAt, name ?? null, username ?? null, Date.now(), id);
   }
 
+  renewCredentials(id: string, previousToken: string, token: string, expiresAt: number) {
+    // A late HTTP response must not replace credentials saved by reauthentication or Trigger.
+    this.db.prepare(`UPDATE agents SET token=?,credential_expires_at=?,updated_at=?
+      WHERE agent_id=? AND token=? AND credential_expires_at<=?`)
+      .run(token, expiresAt, Date.now(), id, previousToken, expiresAt);
+  }
+
   enable(id: string, enabled: boolean) {
     this.db.prepare('UPDATE agents SET enabled=?,updated_at=? WHERE agent_id=?').run(Number(enabled), Date.now(), id);
   }

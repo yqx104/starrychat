@@ -4,6 +4,8 @@
 
 状态：本期 MVP 已按本文实现。以下“当前模块现状”和草案说明保留设计时的基线；最终运行方式与接口见 [adaptor README](../adaptor/README.md)。
 
+2026-11-16 更新：已采用通用 IM MCP 方案。adaptor 提供工具、身份认证及 IM 访问；pi-adaptor 负责 Pi 私有 MCP 配置与加载。原 skill + CLI 方案废弃，本文涉及 IM 发言未实现的表述属于早期基线；当前接口及验证见 [IM MCP 与 Pi 接入](../adaptor/README.md#im-mcp-与-pi-接入)。Codex／Claude Code 接入留待后续。
+
 实施收敛：运行配置只在 `sessions` 中保存，已有配置需停用后修改；异常实例不自动重启，由用户停用／启用恢复。派发每 2 秒补扫，明确暂时拒绝按 1–30 秒退避；Pi 状态检查独立保持 10 秒。事件每会话缓存最近 300 条，通过带 epoch 的轮询接口读取，后端重启后清空。输入以带本地 ID 的完整信封和 Pi 已持久化 user 文本核对；无法关联时暂停，并提供停用后人工确认重试／已接收的操作。已有收件库按 AGENTS.md 停服并备份到仓库外，在本机直接调整结构，重新构建启动并验证后删除备份；仓库只维护当前完整 schema，不维护迁移脚本或迁移版本记录。
 
 adaptor 负责 Agent 身份、账号接入、harness 选择和会话管理。pi-adaptor 作为 adaptor 后端引用的库，封装 Pi 原生 `RpcClient`，通过 RPC 操作一个具体的 Pi session。一个 adaptor 后端可以管理多个 Agent，每个已加载的 Pi session 对应一个 `RpcClient` 和一个 Pi RPC 进程。
@@ -52,7 +54,7 @@ IM 业务事务与 trigger_outbox
 
 adaptor 当前 SQLite 只有 `agents` 和 `inbox` 两张表。现有代码中的 `agents.enabled` 只控制是否连接 Trigger，`inbox.state` 当前一直是 `pending`。本设计将 `enabled` 扩展为统一的 Agent 启停开关，实际连接状态和 session 运行状态仍分别记录；这些代码改动尚未实现。
 
-根 README 中“IM 到 Trigger 尚未接通”等描述已经落后于代码，后续更新模块说明时需要同步修正。Pi 执行入口和统一 IM CLI 仍未接入，不能把接收链路完成描述成 Agent 已能处理并回复消息。
+设计时 Pi 执行入口和 IM 发言尚未接入。现已实现 Pi RPC 执行与 IM MCP 工具，详见本文顶部的实施更新。
 
 ## 3 总体架构与职责
 
@@ -417,9 +419,9 @@ SQLite 收件去重不能保证模型和工具只执行一次。RPC 请求 ID �
 
 本次主 session 接入不要求修改 IM 与 Trigger 的业务协议。跨服务测试可以增加 Pi 接入覆盖，但模型执行逻辑不进入 Go 服务。
 
-## 8 本期不实现：主子 session 与 IM 发言
+## 8 后续方向：主子 session 与 IM 发言的实施更新
 
-本节仅记录后续方向，不属于本期 MVP 的实现范围或验收项。主子 session 的创建与派活、任务结果回传，以及 IM 发言所需的 CLI 或工具桥接均留待后续实现。本期 Pi 的执行输出在 adaptor 前端展示。
+主子 session 的创建与派活、任务结果回传仍属于后续方向。IM 发言现已通过 adaptor 的 MCP 工具实现，Pi 专属接入由 pi-adaptor 处理；其他执行输出继续在 adaptor 前端展示。
 
 后续实现主子 session 时，主 session 通过工具提出派活请求，adaptor 创建子 session 记录、确定 harness、打开运行实例并投递任务。子 session 的状态和结果经 adaptor 返回主 session，默认沿用插队语义。
 
@@ -440,7 +442,7 @@ Pi 的 `switch_session`、`new_session` 和 fork 能力操作当前运行实例�
 
 一个 Task 可以经历多条输入和多段执行，完成依赖明确结果上报，不能直接等同于 Pi 的一次空闲事件。
 
-IM 发言沿用项目的统一 IM 能力方向。当前只有触发和接收链路，统一 IM CLI 尚未实现。后续需要明确它的身份凭据获取、目标会话与引用关系；Pi 执行输出先作为运行事件，是否发送到 IM 由明确的发言操作表达，不能把所有 assistant 输出自动当作聊天回复。
+IM 发言统一使用 adaptor 提供的 `im_send_message` MCP 工具，凭据绑定 IM Agent，显式传入目标会话、可选引用和 @ 名单。skill + CLI 方案已废弃。Pi 执行输出仍作为运行事件，是否发送到 IM 由明确的工具调用表达，不把所有 assistant 输出自动当作聊天回复。
 
 ## 9 本期 MVP 实施顺序与验证
 

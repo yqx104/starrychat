@@ -11,6 +11,7 @@ src/
 │   ├── files.ts        # 私有配置文件读写、原子替换与回滚
 │   ├── selection.ts    # 默认 provider/model 选择
 │   ├── models.ts       # 模型候选、接口、认证配置与组合保存
+│   ├── mcp.ts          # 通用连接信息转换为 Pi 私有 MCP 配置
 │   └── prompt.ts       # SYSTEM.md 读取与提示词校验
 ├── session/
 │   ├── session.ts      # PiSession 生命周期、输入与状态检查
@@ -42,4 +43,8 @@ src/
 
 私有配置模式只从本实例 `SYSTEM.md` 读取替换提示词，不加载工作目录 `.pi/SYSTEM.md`、任何 `APPEND_SYSTEM.md` 或 CLI 提示词参数。替换遵循 Pi 原生语义：替换默认提示词主体，项目指令、Skills 和工作目录信息仍会加入，工具能力不变；普通 Pi CLI 的发现规则不变。重新打开同一会话后使用最新配置，保留历史。
 
-`npm test --workspace=@starrychat/pi-adaptor` 使用真实 RpcClient 和确定性的 JSONL 子进程测试生命周期、环境变量隔离与异常边界。真实 Pi、工具、本地模型协议、两个实例独立认证和系统提示词的链路验证在 adaptor 后端测试中。外部模型调用不包含在自动化测试中。
+`OpenConfig.mcpServers` 可接收 `McpConnection[]`，每项只有 `{name,url,headers?}`。pi-adaptor 在 `open()` 中、启动 RPC 前将托管项写入本实例 `pi-config/mcp.json`，使用 HTTP transport、`enabled: true` 和 `exposure: direct`，因此 Pi 原生 MCP 客户端会直接向模型提供工具。配置目录为 `0700`，文件为 `0600`，原子替换并保留其他 MCP 项；重启时更新托管配置。配置损坏、符号链接指向目录外、同名命名空间冲突或工作目录 `.pi/mcp.json` 覆盖托管项时抛出 `ConfigurationError`。
+
+通用 IM 工具、登录和续期、MCP Server、访问凭据签发属于 adaptor。pi-adaptor 只处理 Pi 配置及 RPC，不查询 IM、读取 adaptor SQLite 或管理通用 MCP 服务生命周期。MCP 凭据由 adaptor 传入且独立于 IM Token，不写入 `PiSettings`、模型请求或对外运行状态。skill + CLI 接入方案已废弃；本期不实现 Codex／Claude Code 适配。
+
+`npm test --workspace=@starrychat/pi-adaptor` 使用真实 RpcClient 和确定性的 JSONL 子进程测试生命周期、环境变量隔离、MCP 私有配置与异常边界。adaptor 后端测试使用真实 Pi 和本地模拟模型／IM，验证 MCP 工具发现、历史读取、引用和 @ 发送、会话恢复不重复发送；同时覆盖多 Agent 身份隔离、续期及未知发送结果。外部模型调用不包含在自动化测试中。

@@ -31,16 +31,16 @@ starrychat/
 | [IM 后端](server/backend/im/README.md) | Go 服务，用 MySQL 保存参与者、会话和消息，提供统一消息接口与消息事件。 |
 | [Trigger](server/backend/trigger/README.md) | 独立 Go 模块，接收 channel 消息并向订阅的 Agent 投递；首版来源为 IM 单聊和群聊。 |
 | [默认 Pi Agent](agents/pi/README.md) | 本地维护的 Pi harness，通过原生 RPC 执行模型与工具并保存会话历史。 |
-| [客户端 Adaptor](client/adaptor/README.md) | 接入 IM Agent，接收与持久化消息，管理主会话、派发与恢复，展示执行过程。 |
-| [Pi 适配库](client/pi-adaptor/README.md) | 封装 RpcClient 的启动、精确恢复、steer、事件、状态检查与关闭。 |
+| [客户端 Adaptor](client/adaptor/README.md) | 接入 IM Agent，接收与持久化消息，管理主会话、派发与恢复，提供通用 IM MCP 工具。 |
+| [Pi 适配库](client/pi-adaptor/README.md) | 封装 RpcClient 的启动、精确恢复、steer、事件、状态检查与关闭，负责 Pi 私有 MCP 配置。 |
 
 IM 只承担聊天职责。Trigger 承担触发和路由职责。Pi 的底层库留在默认 Agent 边界内，IM 和 Trigger 不依赖 Pi。
 
-每个 Agent 复用 `enabled` 统一控制连接与 Pi 运行，配置完整后打开独立主 session。不同 IM 会话的输入汇入所属 Agent 的主 session，默认 steer。模型或工具执行结果不自动发到 IM；主子 session、派活与统一 IM CLI 不在本期 MVP 范围。
+每个 Agent 复用 `enabled` 统一控制连接与 Pi 运行，配置完整后打开独立主 session。不同 IM 会话的输入汇入所属 Agent 的主 session，默认 steer。模型通过 `im_send_message` 显式发言，其他执行输出仍在本机展示；主子 session 与派活暂未实现。
 
 已配置本机脚本的环境可使用 `./localdeploy/start.sh` 按 Trigger → IM → IM Web → adaptor → adaptor Web 启动，`./localdeploy/stop.sh` 按相反顺序停止。默认 IM 页面为 `http://127.0.0.1:5173/`，客户端页面为 `http://127.0.0.1:5174/`；IM、Trigger、adaptor 后端分别监听 `4180`、`4182`、`4183`；MySQL 独立运行。脚本和私有配置不随仓库分发；直接启动命令见各模块 README。停止 adaptor 时需等待其管理的 Pi 进程退出。
 
-后续各 Agent 将通过统一 IM CLI 收发和列出消息，CLI 访问 IM 后端。外部 Agent 无需导入 Pi SDK。Trigger 通过 WebSocket 向本机 adaptor 投递消息，Pi harness 执行入口已接入；统一 IM CLI 尚未实现，首版不引入 ACP。
+adaptor 在现有 HTTP 服务的 `/mcp` 提供通用 IM MCP 能力：身份查询、会话列表、会话详情及成员、参与者列表、消息分页和发送（支持引用与 @）。MCP 访问凭据绑定 IM Agent，由 adaptor 复用该 Agent 的 IM 登录态；pi-adaptor 将连接配置写入实例私有 `mcp.json`，Pi 原生 MCP 客户端加载工具。查询读取 IM 完整历史，Trigger 继续负责新消息唤醒。skill + CLI 方案已废弃；本期只接入 Pi，Codex 和 Claude Code 的接入后续再做，通用 MCP 服务不依赖 Pi 进程。
 
 ## 首版触发范围
 
@@ -49,7 +49,7 @@ IM 只承担聊天职责。Trigger 承担触发和路由职责。Pi 的底层库
 - 群聊没有 @ 时，不自动唤起 Agent。
 - 全量感知不在首版范围内。
 
-Agent 可以 @ 其他 Agent，协作行为由后续 skill 约束。当前每个 Agent 的单聊与群聊输入进入其唯一主会话；未来再扩展子会话和派活。
+Agent 可以通过 MCP 的 `mentioned_agent_ids` 显式 @ 其他 Agent；引用消息或正文中的 @文字不会替代此字段。当前每个 Agent 的单聊与群聊输入进入其唯一主会话；未来再扩展子会话和派活。
 
 ## 当前状态
 

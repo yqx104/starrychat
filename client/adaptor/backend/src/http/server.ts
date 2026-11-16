@@ -6,14 +6,17 @@ import { Sessions } from '../service/sessions.ts';
 import { handleAgents } from './agents.ts';
 import { handleSessions } from './sessions.ts';
 import { json } from './json.ts';
+import type { ImMcp } from '../service/im-mcp.ts';
+import { handleMcp } from './mcp.ts';
 
-export function createApp(config: Config, agents: Agents, sessions: Sessions, checkHealth: () => void) {
-  return createServer(async (request, response) => {
+export function createApp(config: Config, agents: Agents, sessions: Sessions, checkHealth: () => void, mcp?: ImMcp) {
+  const server = createServer(async (request, response) => {
     try {
       if (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host) {
         throw new APIError(403, 'FORBIDDEN', '只接受同源请求');
       }
       const url = new URL(request.url!, 'http://localhost');
+      if (url.pathname === '/mcp' && mcp) { await handleMcp(request, response, mcp); return; }
       if (request.method === 'GET' && url.pathname === '/healthz') {
         checkHealth(); json(response, 200, { status: 'ok' }); return;
       }
@@ -29,4 +32,9 @@ export function createApp(config: Config, agents: Agents, sessions: Sessions, ch
       json(response, known ? error.status : 500, { error: { code: known ? error.code : 'INTERNAL_ERROR', message: known ? error.message : '本机服务处理失败' } });
     }
   });
+  server.on('listening', () => {
+    const address = server.address();
+    if (address && typeof address === 'object') mcp?.listenAt(address.port);
+  });
+  return server;
 }

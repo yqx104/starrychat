@@ -10,7 +10,7 @@ export function assertConfigComplete(directory: string) {
   }
 }
 
-export function readPrivateConfig(directory: string, name: 'settings.json' | 'auth.json' | 'models.json'): Record<string, unknown> {
+export function readPrivateConfig(directory: string, name: 'settings.json' | 'auth.json' | 'models.json' | 'mcp.json'): Record<string, unknown> {
   const path = join(directory, name);
   if (!existsSync(path)) return {};
   try {

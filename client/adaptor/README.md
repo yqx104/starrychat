@@ -2,7 +2,7 @@
 
 TypeScript 后端使用 SQLite 保存接入的 IM Agent 和本机收件箱；React/Vite 前端通过同源 `/adaptor-api` 代理调用后端。每个启用的 Agent 有一条到 Trigger 的 WS/WSS 连接。浏览器关闭不会停止后端接收。
 
-本版完成账号接入、连接状态、启停与重新认证、消息落盘 ACK、去重和离线重连补发，并通过 [pi-adaptor](../pi-adaptor/README.md) 接入 Pi 主会话。Agent 登记、会话订阅、退订、解散和消息通过 IM 的持久化队列同步到 Trigger，消息经 WS 投递到 adaptor，再由 Dispatcher 默认以 `steer` 提交到该 Agent 的主会话。文本、工具活动和错误在本机页面展示；主子 session 和 IM 发言不在本期范围内。
+本版完成账号接入、连接状态、启停与重新认证、消息落盘 ACK、去重和离线重连补发，并通过 [pi-adaptor](../pi-adaptor/README.md) 接入 Pi 主会话。Agent 登记、会话订阅、退订、解散和消息通过 IM 的持久化队列同步到 Trigger，消息经 WS 投递到 adaptor，再由 Dispatcher 默认以 `steer` 提交到该 Agent 的主会话。Pi 通过 adaptor 的通用 IM MCP 工具查询和发送消息；文本、工具活动和错误在本机页面展示，主子 session 暂未实现。
 
 ## 后端目录与职责
 
@@ -12,9 +12,9 @@ TypeScript 后端使用 SQLite 保存接入的 IM Agent 和本机收件箱；Rea
 | --- | --- |
 | `cmd/` | `main.ts` 组装服务并管理启停；`init-db.ts` 显式初始化空库。 |
 | `config/` | 读取配置、校验配置项和解析本机路径。 |
-| `http/` | 请求解析、路由分发、响应与错误处理；账号和会话接口分别维护。 |
-| `service/` | 账号接入与启停、会话生命周期与恢复、输入派发，以及收件落盘后 ACK 的业务协调。 |
-| `repository/` | SQLite 访问、收件去重和原子状态更新。 |
+| `http/` | 请求解析、路由分发、响应与错误处理；`mcp.ts` 负责本机 HTTP MCP 传输和认证入口。 |
+| `service/` | 账号接入与启停、会话生命周期与恢复、输入派发、收件落盘后 ACK，以及 `im-mcp.ts` 中的通用工具和身份绑定。 |
+| `repository/` | SQLite 访问、收件去重和原子状态更新；私有文件保存独立 MCP 访问凭据。 |
 | `clients/` | IM HTTP 调用、Trigger WS 连接/心跳/重连/协议收发和 Pi 会话工厂。 |
 | `model/` | 内部共享数据类型和业务错误。 |
 
@@ -109,9 +109,30 @@ Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AG
 - `sessions`：每个 Agent 一个稳定主 session，保存 harness、工作目录、运行配置和 Pi 原生 ID／会话文件引用。Pi 历史保存在 `<agent_root>/<agent_id>/sessions/<session_id>/`，空会话先保存 ID，文件实际生成后再保存路径。
 - `inbox`：本地递增 ID、接收 Agent、消息 ID、channel ID、完整消息 JSON、投递状态、接收回执、最近错误和接收时间。`(agent_id, message_id)` 唯一；按本地 ID 提交输入，不用不同 IM 会话各自的 `message_seq` 做全局排序。
 
-后端把账号交给 IM 登录，确认 `kind=agent` 后使用 IM 返回的 ID，不允许客户端自行指定身份。Trigger 在每次 WS 握手时调用 IM `/auth/me` 验证身份，并通过 `ready` 帧将 IM 续签的 Token 返回给本机后端保存。客户端到期前重连续签，过期的凭据需要重新认证；Trigger 到期关闭连接。当前继承 IM 的七天滚动有效期和撤销能力，不新增设备授权体系。
+后端把账号交给 IM 登录，确认 `kind=agent` 后使用 IM 返回的 ID，不允许客户端自行指定身份。Trigger 在每次 WS 握手时调用 IM `/auth/me` 验证身份，并通过 `ready` 帧将 IM 续签的 Token 返回给本机后端保存。客户端到期前重连续签，过期的凭据需要重新认证；Trigger 到期关闭连接。IM 使用七天滚动有效期，已签发且未过期的 Token 没有即时撤销能力。
 
 在线状态保存在进程内存中。`enabled` 才是数据库中的连接意图，重启后重新建立连接。Trigger 单实例内，同一 Agent 同时只能有一条活动连接；冲突时展示状态并重试。`adaptor_id` 是本机实例标识，不授予账号权限。
+
+## IM MCP 与 Pi 接入
+
+现有环回 HTTP 服务提供 `/mcp`，使用标准 Streamable HTTP 的无状态 JSON 响应模式。每次请求单独创建 MCP server/transport，认证绑定当前 Agent；不共享 MCP 会话状态，不建立额外 Trigger 连接，不负责推送唤醒。MCP 在 adaptor 运行期间可用，不依赖某个 Pi 会话启停。
+
+| 工具 | 输入与结果 |
+| --- | --- |
+| `im_whoami` | 无参数；调用 IM 验证登录并返回 `{participant}`。 |
+| `im_list_conversations` | 无参数；返回 `{conversations}`，包含隐藏和已解散状态。 |
+| `im_get_conversation` | `conversation_id`；返回 `{conversation,members}`，便于识别单聊对象和 @ 目标。 |
+| `im_list_participants` | 可选 `kind: human/agent`；返回 `{participants}`。 |
+| `im_list_messages` | `conversation_id`、`limit`（默认 20，最大 50）、互斥的 `before_seq/after_seq`；返回 `{messages,has_more}`，按会话内序号升序，读取 IM 完整历史。 |
+| `im_send_message` | `conversation_id,content`，可选 `quoted_message_id,mentioned_agent_ids`；返回 `{message}`。 |
+
+工具返回结构化 JSON，并提供同内容的 MCP text。身份来自访问凭据，不接受 `agent_id`／`sender_id` 参数；所有消息操作显式指定会话。群聊只有 `mentioned_agent_ids` 会触发对应 Agent。发送成功仅表示 IM 已保存；网络中断、服务端错误或成功响应无法解析时返回 `SEND_RESULT_UNKNOWN`，需查询历史核实，客户端不自动重发。IM 登录失效返回 `IM_AUTH_REQUIRED`，在 adaptor 页面重新认证后原 MCP 配置可继续使用。
+
+首次为 Agent 提供连接配置时，adaptor 在 `<sqlite_path>.mcp-credentials.json` 中原子保存该 Agent 的随机 MCP 凭据，文件权限 `0600`；文件与 SQLite 同处私有运行目录，重启复用。它只用于访问本机 MCP，不是 IM Token。IM Token 仍保存在 SQLite，由每次调用动态读取；HTTP 响应续期回写采用原 Token 比较，迟到响应不会覆盖重新认证或 Trigger 已保存的凭据。凭据文件损坏时拒绝启动，不静默覆盖。
+
+adaptor 只向会话工厂传递 `{name,url,headers}`。pi-adaptor 在启动 RPC 前将托管项写入 `<agent_root>/<agent_id>/pi-config/mcp.json`，设为 `exposure: direct`，保留其他 MCP 配置。工作目录 `.pi/mcp.json` 的同名覆盖会被拒绝，以免改变绑定身份。无需手动改 Pi 配置；MCP 凭据不进入浏览器响应、模型工具参数或 SQLite 的运行配置。
+
+本次不改数据库表。停止旧 adaptor、执行 `npm run build:adaptor`、启动新版后，已有 Pi Agent 会在恢复时自动获得 MCP 配置。skill + CLI 方案已废弃；Codex 和 Claude Code 的配置与运行适配留待后续。
 
 ## HTTP 接口
 
@@ -121,6 +142,7 @@ Pi 子进程仅继承启动所需的环境变量白名单，通过 `PI_CODING_AG
 | --- | --- |
 | `GET /healthz` | SQLite 可用时返回 `{status:"ok"}` |
 | `GET /config` | 返回 `adaptor_id`、`im_base_url`、`trigger_ws_url` |
+| `POST /mcp` | 标准 MCP JSON-RPC；必须携带该 Agent 的本机 MCP Bearer 凭据，工具结果不返回 IM Token。 |
 | `GET /agents` | 返回 `{agents}`，不含 Token，附带连接状态、连接时间和最近错误 |
 | `POST /agents` | `{username,password}`；成功 `201 {agent}`，默认启用；重复接入返回 `409` |
 | `PATCH /agents/{id}` | `{enabled:boolean}`；返回 `{agent}` |

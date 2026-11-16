@@ -6,6 +6,7 @@ import type { Input, NativeRef, OpenConfig, Receipt, Session, SessionEvent, Sess
 import { readModelSelection } from '../config/selection.ts';
 import { readPrivateConfig } from '../config/files.ts';
 import { readSystemPrompt } from '../config/prompt.ts';
+import { configureMcp } from '../config/mcp.ts';
 import { isolatedEnvironment } from './environment.ts';
 import { locateSessionFile, validateSessionFile, readPersistedInputs } from './history.ts';
 
@@ -41,6 +42,7 @@ export class PiSession implements Session {
     if (!statSync(this.config.cwd).isDirectory()) throw new Error('Pi 工作目录不存在');
     this.locate();
     mkdirSync(this.config.settings.pi_config_dir, { recursive: true, mode: 0o700 });
+    configureMcp(this.config.settings.pi_config_dir, this.config.cwd, this.config.mcpServers ?? []);
     // Loading Pi is deferred: a missing/broken Pi build must not stop the inbox service.
     const { RpcClient } = await import('@earendil-works/pi-coding-agent');
     if (this.closed) throw new Error('Pi 会话已关闭');

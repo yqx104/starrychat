@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join } from 'node:path';
 import { APIError } from '../model/errors.ts';
-import { ConfigurationError, errorMessage, readModelSelection, readModelOptions, saveModelConfiguration, readSystemPrompt, validateSystemPrompt, type SystemPromptConfiguration, type ModelConfiguration, type ModelSelection, type ProviderOption, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState } from '@starrychat/pi-adaptor';
+import { ConfigurationError, errorMessage, readModelSelection, readModelOptions, saveModelConfiguration, readSystemPrompt, validateSystemPrompt, type SystemPromptConfiguration, type ModelConfiguration, type ModelSelection, type ProviderOption, type PiSettings, type NativeRef, type Session, type SessionEvent, type SessionFactory, type SessionState, type McpConnection } from '@starrychat/pi-adaptor';
 import type { Config } from '../config/config.ts';
 import { Store } from '../repository/store.ts';
 import type { SessionRecord } from '../model/types.ts';
@@ -58,6 +58,7 @@ export class Sessions {
   private store: Store;
   private config: Config;
   private factory: SessionFactory;
+  private mcpServers: (agentId: string) => McpConnection[];
   private runtimes = new Map<string, Runtime>();
   private operations = new Map<string, Promise<void>>();
   private events = new Map<string, DisplayEvent[]>();
@@ -67,8 +68,9 @@ export class Sessions {
   onReady: (agentId: string) => void = () => {};
   readonly eventEpoch = randomUUID();
 
-  constructor(store: Store, config: Config, factory: SessionFactory = createSession) {
-    this.store = store; this.config = config; this.factory = factory;
+  constructor(store: Store, config: Config, factory: SessionFactory = createSession,
+    mcpServers: (agentId: string) => McpConnection[] = () => []) {
+    this.store = store; this.config = config; this.factory = factory; this.mcpServers = mcpServers;
   }
 
   private requireAgent(agentId: string) {
@@ -221,6 +223,7 @@ export class Sessions {
       const sessionDir = join(directories.sessions_dir, record.session_id);
       const session = this.factory({ cwd: record.cwd, settings, nativeRef: ref,
         cliPath: this.config.pi_cli_path!, sessionDir,
+        mcpServers: this.mcpServers(agentId),
         allowCreate: !this.store.hasHistory(agentId) });
       const runtime: Runtime = { session, record, ready: false, status: 'starting', error: null };
       this.runtimes.set(agentId, runtime);
