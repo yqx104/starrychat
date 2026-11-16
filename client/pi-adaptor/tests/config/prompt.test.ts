@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { saveModelConfiguration } from '../src/model-config.ts';
-import { readSystemPrompt, validateSystemPrompt } from '../src/prompt-config.ts';
+import { saveModelConfiguration } from '../../src/config/models.ts';
+import { readSystemPrompt, validateSystemPrompt } from '../../src/config/prompt.ts';
 
 function fixture(t: TestContext) {
   const directory = fs.mkdtempSync(join(tmpdir(), 'pi-system-prompt-'));

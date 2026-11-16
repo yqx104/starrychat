@@ -6,9 +6,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
-import { PiSession, InputError, writeModelSelection, type OpenConfig, type SessionEvent } from '../src/index.ts';
+import { PiSession, InputError, writeModelSelection, type OpenConfig, type SessionEvent } from '../../src/index.ts';
 
-const cliPath = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
+const cliPath = fileURLToPath(new URL('../fixtures/rpc.mjs', import.meta.url));
 const resources = new Map<string, PiSession[]>();
 function create(config: OpenConfig) {
   const session = new PiSession(config);

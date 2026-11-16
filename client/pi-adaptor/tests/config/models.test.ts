@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { readModelOptions, saveModelConfiguration } from '../src/model-config.ts';
-import { readModelSelection } from '../src/config.ts';
+import { readModelOptions, saveModelConfiguration } from '../../src/config/models.ts';
+import { readModelSelection } from '../../src/config/selection.ts';
 
 function fixture(t: TestContext) {
   const directory = fs.mkdtempSync(join(tmpdir(), 'pi-model-form-'));

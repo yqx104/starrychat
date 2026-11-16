@@ -1,4 +1,4 @@
-import type { SessionEvent } from './types.ts';
+import type { SessionEvent } from '../model/types.ts';
 
 const text = (value: unknown) => typeof value === 'string' ? value.slice(0, 16000) : '';
 

@@ -1,19 +1,13 @@
-import { existsSync, mkdirSync, openSync, readSync, closeSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, statSync } from 'node:fs';
 import type { RpcClient } from '@earendil-works/pi-coding-agent';
 import { displayEvent } from './events.ts';
-import { ConfigurationError, InputError, errorMessage, type Input, type NativeRef, type OpenConfig, type Receipt, type Session, type SessionEvent, type SessionState } from './types.ts';
-import { isolatedEnvironment, readModelSelection, readPrivateConfig } from './config.ts';
-import { readSystemPrompt } from './prompt-config.ts';
-
-function header(path: string): { type: string; id: string } {
-  const fd = openSync(path, 'r');
-  try {
-    const buffer = Buffer.alloc(16384);
-    const size = readSync(fd, buffer, 0, buffer.length, 0);
-    return JSON.parse(buffer.subarray(0, size).toString().split('\n')[0]);
-  } finally { closeSync(fd); }
-}
+import { ConfigurationError, InputError, errorMessage } from '../model/errors.ts';
+import type { Input, NativeRef, OpenConfig, Receipt, Session, SessionEvent, SessionState } from '../model/types.ts';
+import { readModelSelection } from '../config/selection.ts';
+import { readPrivateConfig } from '../config/files.ts';
+import { readSystemPrompt } from '../config/prompt.ts';
+import { isolatedEnvironment } from './environment.ts';
+import { locateSessionFile, validateSessionFile, readPersistedInputs } from './history.ts';
 
 export class PiSession implements Session {
   private config: OpenConfig;
@@ -33,20 +27,7 @@ export class PiSession implements Session {
 
   private locate() {
     const { sessionDir, allowCreate } = this.config;
-    mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
-    if (this.ref.session_file) {
-      if (!existsSync(this.ref.session_file)) throw new Error('原 Pi 会话文件缺失；请恢复文件，不能创建空上下文');
-      const value = header(this.ref.session_file);
-      if (value.type !== 'session' || value.id !== this.ref.session_id) throw new Error('Pi 会话文件身份不匹配');
-      return;
-    }
-    const matches = readdirSync(sessionDir).filter(name => name.endsWith('.jsonl')).filter(name => {
-      const value = header(join(sessionDir, name));
-      return value.type === 'session' && value.id === this.ref.session_id;
-    });
-    if (matches.length > 1) throw new Error('找到多个同 ID 的 Pi 会话文件，请先核对');
-    if (matches.length === 1) this.ref.session_file = join(sessionDir, matches[0]);
-    else if (!allowCreate) throw new Error('已有输入可能被处理，但无法确认 Pi 历史；请先核对待恢复输入');
+    this.ref.session_file = locateSessionFile(this.ref, sessionDir, allowCreate);
   }
 
   async open(): Promise<SessionState> {
@@ -103,13 +84,7 @@ export class PiSession implements Session {
     this.checking = this.rpc.getState().then(state => {
       if (this.closed) throw new Error('Pi 会话已关闭');
       if (state.sessionId !== this.ref.session_id) throw new Error('Pi 会话身份发生变化，已停止派发');
-      if (this.ref.session_file && !existsSync(this.ref.session_file)) throw new Error('原 Pi 会话文件缺失，已停止派发');
-      if (state.sessionFile && existsSync(state.sessionFile)) {
-        const file = resolve(state.sessionFile);
-        if (this.ref.session_file && file !== resolve(this.ref.session_file)) throw new Error('Pi 会话文件路径发生变化，已停止派发');
-        if (header(file).id !== this.ref.session_id) throw new Error('Pi 持久化文件身份不匹配');
-        this.ref.session_file = file;
-      }
+      this.ref.session_file = validateSessionFile(this.ref, state.sessionFile);
       const view: SessionState = { nativeRef: { ...this.ref },
         status: state.isCompacting ? 'compacting' : state.isStreaming || this.unsettled || state.pendingMessageCount > 0 ? 'busy' : 'idle',
         pending: state.pendingMessageCount, model: state.model ? { provider: state.model.provider, id: state.model.id } : null };
@@ -137,16 +112,7 @@ export class PiSession implements Session {
 
   async persistedInputs(): Promise<Set<string>> {
     this.locate();
-    if (!this.ref.session_file) return new Set();
-    const { parseSessionEntries } = await import('@earendil-works/pi-coding-agent');
-    const entries = parseSessionEntries(readFileSync(this.ref.session_file, 'utf8'));
-    const texts = new Set<string>();
-    for (const entry of entries) {
-      if (entry.type !== 'message' || entry.message.role !== 'user') continue;
-      const content = entry.message.content;
-      texts.add(typeof content === 'string' ? content : content.filter(part => part.type === 'text').map(part => part.text).join(''));
-    }
-    return texts;
+    return readPersistedInputs(this.ref.session_file);
   }
 
   async abort() { if (this.closed || !this.rpc) throw new Error('Pi 会话未打开'); await this.rpc.abort(); }

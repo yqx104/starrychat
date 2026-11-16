@@ -2,6 +2,28 @@
 
 `@starrychat/pi-adaptor` 是 adaptor 后端引用的 TypeScript 库。每个 `PiSession` 封装仓库内 Pi 的原生 `RpcClient`，启动一个 Pi RPC 子进程；没有独立 HTTP 服务或自定义进程通信协议。
 
+源码按职责分为三个目录，`src/index.ts` 保持统一对外入口：
+
+```text
+src/
+├── index.ts
+├── config/
+│   ├── files.ts        # 私有配置文件读写、原子替换与回滚
+│   ├── selection.ts    # 默认 provider/model 选择
+│   ├── models.ts       # 模型候选、接口、认证配置与组合保存
+│   └── prompt.ts       # SYSTEM.md 读取与提示词校验
+├── session/
+│   ├── session.ts      # PiSession 生命周期、输入与状态检查
+│   ├── events.ts       # 原生事件转换为可展示事件
+│   ├── history.ts      # 会话文件定位、身份校验与历史输入读取
+│   └── environment.ts  # RPC 子进程环境变量隔离
+└── model/
+    ├── types.ts        # 公共会话契约
+    └── errors.ts       # 错误类与错误文本处理
+```
+
+依赖方向为 `session → config`，两者都可依赖 `model`；`config` 不依赖会话实现。配置类型与对应配置逻辑放在一起，内部直接引用具体文件。`saveModelConfiguration()` 仍统一保存模型、认证和提示词，并在失败时整体回滚。测试按 `tests/config/` 和 `tests/session/` 对应组织，公共 RPC 子进程夹具保留在 `tests/fixtures/`。
+
 在项目根完成依赖安装及 Pi 模型目录准备后，执行 `npm run build:adaptor`。后端默认入口是 `agents/pi/upstream/packages/coding-agent/dist/bundle/rpc-entry.js`；源码来源仍为本地 fork。Pi SDK 延迟到打开会话时加载，Pi 缺少构建或启动失败不会阻止 adaptor 收件。
 
 导出 `PiSession`、`Session`、`OpenConfig`、`SessionEvent` 和 `InputError` 等类型。使用顺序是创建对象、订阅 `onEvent()`、调用 `open()`，随后调用 `sendInput({id,text})`、`getState()`、`abort()`，最后 `close()`。一个对象只能打开一次；关闭后恢复需按同一 `nativeRef` 创建新对象。

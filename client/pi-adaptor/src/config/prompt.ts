@@ -1,7 +1,7 @@
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
-import { assertConfigComplete } from './config.ts';
-import { ConfigurationError } from './types.ts';
+import { assertConfigComplete } from './files.ts';
+import { ConfigurationError } from '../model/errors.ts';
 
 export const maxSystemPromptBytes = 64 * 1024;
 export interface SystemPromptConfiguration { mode: 'default' | 'replace'; text: string }

@@ -1,7 +1,8 @@
 import { getBuiltinModels, getBuiltinProviders, type BuiltinProvider } from '@earendil-works/pi-ai/providers/all';
-import { assertConfigComplete, readPrivateConfig, writePrivateConfigs, type ModelSelection } from './config.ts';
-import { ConfigurationError } from './types.ts';
-import { readSystemPrompt, validateSystemPrompt, type SystemPromptConfiguration } from './prompt-config.ts';
+import { assertConfigComplete, readPrivateConfig, writePrivateConfigs } from './files.ts';
+import type { ModelSelection } from './selection.ts';
+import { ConfigurationError } from '../model/errors.ts';
+import { readSystemPrompt, validateSystemPrompt, type SystemPromptConfiguration } from './prompt.ts';
 
 type Json = Record<string, unknown>;
 export interface ModelConfiguration extends ModelSelection {

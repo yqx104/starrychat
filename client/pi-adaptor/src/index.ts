@@ -1,5 +1,6 @@
-export { PiSession } from './session.ts';
-export * from './types.ts';
-export { readModelSelection, writeModelSelection, type ModelSelection } from './config.ts';
-export { readModelOptions, saveModelConfiguration, type ModelConfiguration, type ProviderOption, configurableApis } from './model-config.ts';
-export { readSystemPrompt, validateSystemPrompt, maxSystemPromptBytes, type SystemPromptConfiguration } from './prompt-config.ts';
+export { PiSession } from './session/session.ts';
+export * from './model/types.ts';
+export { ConfigurationError, InputError, errorMessage } from './model/errors.ts';
+export { readModelSelection, writeModelSelection, type ModelSelection } from './config/selection.ts';
+export { readModelOptions, saveModelConfiguration, type ModelConfiguration, type ProviderOption, configurableApis } from './config/models.ts';
+export { readSystemPrompt, validateSystemPrompt, maxSystemPromptBytes, type SystemPromptConfiguration } from './config/prompt.ts';
