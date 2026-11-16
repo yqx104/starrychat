@@ -1,0 +1,43 @@
+.topbar {
+  height: 80px;
+  border-bottom: 1px solid #e4e9f1;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  background: #eaf1ff;
+  border-radius: 12px;
+  color: #3574e8;
+  font-size: 26px;
+}
+.brand strong {
+  font-size: 17px;
+  letter-spacing: 0.2px;
+}
+.brand small {
+  display: block;
+  color: #8b98aa;
+  font-size: 11px;
+  margin-top: 3px;
+}
+.summary {
+  color: #738298;
+  font-size: 12px;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  min-height: calc(100vh - 80px);
+}

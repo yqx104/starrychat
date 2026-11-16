@@ -1,0 +1,65 @@
+.inbox-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 28px 0 20px;
+  gap: 12px;
+}
+.inbox-heading p {
+  font-size: 12px;
+  color: #8b98aa;
+  margin-top: 8px;
+}
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.message {
+  background: white;
+  border: 1px solid #e4eaf2;
+  border-radius: 12px;
+  padding: 21px 24px;
+}
+.message-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: #7e8da3;
+}
+.seq {
+  color: #b1bac7;
+  margin-left: 6px;
+}
+.message-meta time {
+  color: #9ba7b6;
+}
+.message-content {
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 16px 0 20px;
+  color: #34445b;
+}
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.message-footer code {
+  font-size: 10px;
+  color: #a0aabb;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pending {
+  font-size: 10px;
+  color: #8d9aae;
+  background: #f5f7fa;
+  padding: 4px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}

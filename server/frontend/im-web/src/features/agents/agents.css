@@ -1,0 +1,98 @@
+.manage-agent-entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 22px 0;
+  padding: 10px 12px;
+  border: 1px solid #e8eee7;
+  border-radius: 9px;
+  background: #f9fbf8;
+  color: #587766;
+  text-align: left;
+  font-size: 12px;
+}
+.manage-agent-entry:hover {
+  background: #edf5ed;
+}
+.manage-agent-entry svg {
+  width: 16px;
+  height: 16px;
+}
+.manage-agent-entry span:nth-child(2) {
+  flex: 1;
+}
+.manage-agent-entry span:last-child {
+  font-size: 17px;
+  color: #a7b8aa;
+}
+.agent-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0;
+}
+.agent-list-heading p {
+  color: #91a095;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.agent-list-heading .button {
+  white-space: nowrap;
+  padding: 9px 11px;
+}
+.agent-list-heading svg {
+  width: 15px;
+  height: 15px;
+}
+.agent-account-list {
+  border-top: 1px solid #edf1ec;
+  max-height: 300px;
+  overflow: auto;
+}
+.agent-account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f3ef;
+}
+.agent-account-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-account-copy strong,
+.agent-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-account-copy strong {
+  font-size: 12px;
+  color: #41564a;
+}
+.agent-account-copy span {
+  font-size: 11px;
+  color: #9aa99d;
+}
+.agent-state {
+  padding: 18px 0;
+  color: #99a99c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.agent-field {
+  margin-top: 16px;
+}
+@media (max-width: 480px) {
+  .agent-list-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .agent-list-heading .button {
+    align-self: flex-end;
+  }
+}

@@ -4,7 +4,14 @@
   "private": true,
   "scripts": {
     "build:adaptor": "npm run build:offline --workspace=@starrychat/pi-upstream && npm run build --workspace=@starrychat/adaptor-contracts && npm run build --workspace=@starrychat/pi-adaptor && npm run build --workspace=@starrychat/adaptor-backend && npm run build --workspace=@starrychat/adaptor-web",
-    "test:adaptor": "npm test --workspace=@starrychat/pi-adaptor && npm test --workspace=@starrychat/adaptor-backend"
+    "test:adaptor": "npm test --workspace=@starrychat/pi-adaptor && npm test --workspace=@starrychat/adaptor-backend",
+    "check:frontend": "npm run check --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web",
+    "lint:frontend": "npm run lint --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web",
+    "format:frontend": "npm run format --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web",
+    "format:check:frontend": "npm run format:check --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web",
+    "typecheck:frontend": "npm run typecheck --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web",
+    "test:frontend": "npm run test --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web",
+    "build:frontend": "npm run build --workspace=@starrychat/im-web --workspace=@starrychat/adaptor-web"
   },
   "workspaces": [
     "server/frontend/*",

@@ -1,0 +1,57 @@
+main {
+  padding: 36px 44px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+.agent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid #e0e7f0;
+}
+.title-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.identity {
+  font:
+    11px ui-monospace,
+    monospace;
+  color: #98a4b5;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.badge {
+  padding: 4px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  background: #e9edf3;
+  color: #7f8b9d;
+  white-space: nowrap;
+}
+.badge.online {
+  background: #e4f5ec;
+  color: #28936a;
+}
+.badge.connecting,
+.badge.reconnecting {
+  background: #fff3d9;
+  color: #aa8029;
+}
+.badge.auth_required,
+.badge.conflict {
+  background: #ffebe6;
+  color: #b66851;
+}
+.actions {
+  display: flex;
+  gap: 9px;
+  flex-shrink: 0;
+}
+.actions button {
+  font-size: 12px;
+}

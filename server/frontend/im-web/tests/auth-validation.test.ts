@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateCredentials } from '../src/features/auth/validation';
+import { validateCredentials } from '../src/lib/account-validation';
 
 describe('authentication input rules', () => {
   it('validates the ASCII username and UTF-8 byte length rather than character count', () => {

@@ -19,7 +19,9 @@ export function useAuth() {
     let alive = true;
     const controller = new AbortController();
     const unsubscribe = api.onUnauthorized(() => {
-      setState((current) => current.status === 'authenticated' ? { status: 'reauth', user: current.user } : current);
+      setState((current) =>
+        current.status === 'authenticated' ? { status: 'reauth', user: current.user } : current,
+      );
     });
     setState({ status: 'checking' });
     void (async () => {
@@ -28,19 +30,30 @@ export function useAuth() {
       try {
         const user = await api.me(controller.signal);
         if (!alive) return;
-        api.resumeSession(); setState({ status: 'authenticated', user });
+        api.resumeSession();
+        setState({ status: 'authenticated', user });
       } catch (error) {
         if (!alive || (error instanceof Error && error.name === 'AbortError')) return;
-        setState(error instanceof ApiError && error.status === 401 ? { status: 'guest' } : { status: 'unavailable', message: errorMessage(error) });
+        setState(
+          error instanceof ApiError && error.status === 401
+            ? { status: 'guest' }
+            : { status: 'unavailable', message: errorMessage(error) },
+        );
       }
     })();
-    return () => { alive = false; controller.abort(); unsubscribe(); void api.suspendSession(); };
+    return () => {
+      alive = false;
+      controller.abort();
+      unsubscribe();
+      void api.suspendSession();
+    };
   }, [retry]);
 
   const login = async (username: string, password: string) => {
     await api.waitForDrain();
     const result = await api.login(username, password);
-    api.resumeSession(); setState({ status: 'authenticated', user: result.participant });
+    api.resumeSession();
+    setState({ status: 'authenticated', user: result.participant });
   };
   const register = async (username: string, password: string, name: string) => {
     await api.waitForDrain();
@@ -52,9 +65,14 @@ export function useAuth() {
     const drained = api.suspendSession();
     setState({ status: 'signingOut' });
     await drained;
-    try { await api.logout(); setState({ status: 'guest' }); }
-    catch (error) { setState({ status: 'logoutFailed', message: errorMessage(error) }); }
-    finally { signingOut.current = false; }
+    try {
+      await api.logout();
+      setState({ status: 'guest' });
+    } catch (error) {
+      setState({ status: 'logoutFailed', message: errorMessage(error) });
+    } finally {
+      signingOut.current = false;
+    }
   };
   return { state, login, register, logout, retry: () => setRetry((value) => value + 1) };
 }
